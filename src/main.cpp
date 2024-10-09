@@ -36,6 +36,7 @@ float duration = 0;
 float interval_s = 0;
 bool fanIsOn = false;
 float meanpm02 = 0;
+float ref[5];
 
 PMS local_pms(Serial1);
 
@@ -205,8 +206,9 @@ void loop() {
                     float(doc[2]["pm02"]) + float(doc[3]["pm02"]) +
                     float(doc[4]["pm02"])) /
                    5;
-        for (int i; i < 5; i++) {
-          Serial.printf("Ref #%d: %.2f\n", i, float(doc[i]["pm02"]));
+        for (int i = 0; i < 5; i++) {
+          ref[i] = float(doc[i]["pm02"]);
+          Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
         }
         Serial.print("Mean pm02: ");
         Serial.println(meanpm02);
@@ -341,12 +343,23 @@ void loop() {
       size_t n2 = serializeJson(pmStatus, buffer2);
       client.publish("pm-controller/status/pm2.5", buffer2, n2);
 
+      // Publish PM2.5 ref nformation
+      DynamicJsonDocument pmRefStatus(200);
+      pmRefStatus["Ref #1"] = ref[0];
+      pmRefStatus["Ref #2"] = ref[1];
+      pmRefStatus["Ref #3"] = ref[2];
+      pmRefStatus["Ref #4"] = ref[3];
+      pmRefStatus["Ref #5"] = ref[4];
+      char buffer3[128];
+      size_t n3 = serializeJson(pmRefStatus, buffer3);
+      client.publish("pm-controller/status/pm2.5-ref", buffer3, n3);
+
       // Publish fan speed to grafana
       DynamicJsonDocument fanSpeed(200);
       fanSpeed["fan speed"] = fanSpeedPercent;
-      char buffer3[128];
-      size_t n3 = serializeJson(fanSpeed, buffer3);
-      client.publish("pm-controller/status/fanspeed", buffer3, n3);
+      char buffer4[128];
+      size_t n4 = serializeJson(fanSpeed, buffer3);
+      client.publish("pm-controller/status/fanspeed", buffer3, n4);
 
       // Print log
       Serial.print("Average PM2.5: ");
