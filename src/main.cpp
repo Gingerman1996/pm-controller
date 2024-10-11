@@ -3,6 +3,7 @@
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <esp_now.h>
 
 #include "Calculator.h"
 #include "PMS.h"
@@ -65,6 +66,14 @@ const char* mqtt_password = "TanapaT41894";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+// Define the structure for the message
+typedef struct struct_message {
+  char message[32];  // Message to send
+  float pm25;        // PM2.5 value
+} struct_message;
+
+struct_message myData;
+
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
   Wire.write(REGISTER);
@@ -108,6 +117,24 @@ void reconnect() {
       Serial.println(" try again in 5 seconds");
       delay(5000);  // Wait 5 seconds before retrying
     }
+  }
+}
+
+// Callback function when data is sent
+void onDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
+  Serial.print("Request sent: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Failed");
+}
+
+// Callback function when data is received
+void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
+  memcpy(&myData, incomingData, sizeof(myData));
+  if (strcmp(myData.message, "FidasDataResponse") ==
+      0) {  // Check if it is a response message
+    Serial.println("Received response:");
+    Serial.print("PM2.5: ");
+    Serial.println(myData.pm25);
+    Serial.println();
   }
 }
 
@@ -162,6 +189,27 @@ void setup() {
 
   client.setServer(mqtt_server, mqtt_port);  // Set the MQTT server
   client.setCallback(callback);  // Set the MQTT message callback function
+
+  // Initialize ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW initialization failed");
+    return;
+  }
+
+  // Register callbacks for sending and receiving data
+  esp_now_register_send_cb(onDataSent);
+  esp_now_register_recv_cb(onDataRecv);
+
+  // Add peer (Broadcast)
+  esp_now_peer_info_t peerInfo;
+  memset(peerInfo.peer_addr, 0xFF,
+         6);  // Set MAC address to Broadcast (FF:FF:FF:FF:FF:FF)
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    return;
+  }
 }
 
 int MultiplicationCombine(unsigned int x_high, unsigned int x_low) {
@@ -177,7 +225,6 @@ void loop() {
   bool localPmsDataValid = false;
   // Make HTTPS request
   if (WiFi.status() == WL_CONNECTED) {
-    // if (!fanIsOn) {
     HTTPClient https;
     https.begin(apiUrl);  // Specify the URL
     // Perform the GET request
@@ -189,8 +236,7 @@ void loop() {
       // Check if the GET request was successful
       if (httpCode == HTTP_CODE_OK) {
         String payload = https.getString();
-        // Serial.println("Response payload:");
-        // Serial.println(payload);
+
         // Parse the JSON response
         DynamicJsonDocument doc(49152);
         DeserializationError error = deserializeJson(doc, payload);
@@ -222,7 +268,6 @@ void loop() {
       return;
     }
     https.end();  // Close connection
-                  // }
     if (!client.connected()) {
       reconnect();  // Reconnect if not connected
     }
@@ -238,9 +283,6 @@ void loop() {
       local_pms.requestRead();
       localPmsDataValid = local_pms.readUntil(localPmsData);
     }
-
-    // Fan speed range --> min: 140, max: 511
-    // Flap range --> min: 0, max: 511
 
     // Setting interval length based on time
     interval_s = millis() - bootTime > INIT_INTERVAL_SECONDS * 1000
@@ -299,21 +341,13 @@ void loop() {
 
     // convert to RPM
     int tach1 = 60 * _SR * 8192 / (NP * tach_out);
-    // data = get_I2C_register(MAX31790, 0x30);
-
-    // Writte read User reg
-    // set_I2C_register(MAX31790, 0x15, B10011001);
-    // delay(1);
-    // byte check = get_I2C_register(MAX31790, 0x15);
 
     //////////////////////////////////////////////////// print
     if (millis() > pre2 + 2000) {
       pre2 = millis();
       digitalWrite(Trig1, HIGH);
       Serial.println();
-      // Serial.print(String(doc[0]["locationName"]));
-      // Serial.print(" PM2.5: ");
-      // Serial.println(String(doc[0]["pm02"]));
+
       if (localPmsDataValid) {
         Serial.println("PMS data is valid.");
         Serial.print("Local PM 1.0 (ug/m3): ");
@@ -328,38 +362,49 @@ void loop() {
         Serial.println();
       }
 
+      // Send "GetFidasData" request
+      strcpy(myData.message, "GetFidasData");
+      esp_err_t result = esp_now_send(NULL, (uint8_t*)&myData,
+                                      sizeof(myData));  // Send to Broadcast
+
+      if (result == ESP_OK) {
+        Serial.println("Requesting 'GetFidasData'...");
+      } else {
+        Serial.println("Request failed");
+      }
+
       // Publish fan status
-      DynamicJsonDocument fanStatus(200);
-      fanStatus["fan status"] = fanIsOn;
-      char buffer1[128];
-      size_t n1 = serializeJson(fanStatus, buffer1);
-      client.publish("pm-controller/status/fan-status", buffer1, n1);
+      // DynamicJsonDocument fanStatus(200);
+      // fanStatus["fan status"] = fanIsOn;
+      // char buffer1[128];
+      // size_t n1 = serializeJson(fanStatus, buffer1);
+      // client.publish("pm-controller/status/fan-status", buffer1, n1);
 
-      // Publish PM2.5 information
-      DynamicJsonDocument pmStatus(200);
-      pmStatus["mean pm2.5"] = meanpm02;
-      pmStatus["pm2.5 target"] = TARGET_PM02;
-      char buffer2[128];
-      size_t n2 = serializeJson(pmStatus, buffer2);
-      client.publish("pm-controller/status/pm2.5", buffer2, n2);
+      // // Publish PM2.5 information
+      // DynamicJsonDocument pmStatus(200);
+      // pmStatus["mean pm2.5"] = meanpm02;
+      // pmStatus["pm2.5 target"] = TARGET_PM02;
+      // char buffer2[128];
+      // size_t n2 = serializeJson(pmStatus, buffer2);
+      // client.publish("pm-controller/status/pm2.5", buffer2, n2);
 
-      // Publish PM2.5 ref nformation
-      DynamicJsonDocument pmRefStatus(200);
-      pmRefStatus["Ref #1"] = ref[0];
-      pmRefStatus["Ref #2"] = ref[1];
-      pmRefStatus["Ref #3"] = ref[2];
-      pmRefStatus["Ref #4"] = ref[3];
-      pmRefStatus["Ref #5"] = ref[4];
-      char buffer3[128];
-      size_t n3 = serializeJson(pmRefStatus, buffer3);
-      client.publish("pm-controller/status/pm2.5-ref", buffer3, n3);
+      // // Publish PM2.5 ref nformation
+      // DynamicJsonDocument pmRefStatus(200);
+      // pmRefStatus["Ref #1"] = ref[0];
+      // pmRefStatus["Ref #2"] = ref[1];
+      // pmRefStatus["Ref #3"] = ref[2];
+      // pmRefStatus["Ref #4"] = ref[3];
+      // pmRefStatus["Ref #5"] = ref[4];
+      // char buffer3[128];
+      // size_t n3 = serializeJson(pmRefStatus, buffer3);
+      // client.publish("pm-controller/status/pm2.5-ref", buffer3, n3);
 
-      // Publish fan speed to grafana
-      DynamicJsonDocument fanSpeed(200);
-      fanSpeed["fan speed"] = fanSpeedPercent;
-      char buffer4[128];
-      size_t n4 = serializeJson(fanSpeed, buffer3);
-      client.publish("pm-controller/status/fanspeed", buffer3, n4);
+      // // Publish fan speed to grafana
+      // DynamicJsonDocument fanSpeed(200);
+      // fanSpeed["fan speed"] = fanSpeedPercent;
+      // char buffer4[128];
+      // size_t n4 = serializeJson(fanSpeed, buffer3);
+      // client.publish("pm-controller/status/fanspeed", buffer3, n4);
 
       // Print log
       Serial.print("Average PM2.5: ");
