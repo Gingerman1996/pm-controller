@@ -74,6 +74,8 @@ typedef struct struct_message {
 
 struct_message myData;
 
+uint8_t peerMACAddress[] = {0x34, 0xB7, 0xDA, 0xBD, 0x94, 0xF4};
+
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
   Wire.write(REGISTER);
@@ -184,11 +186,13 @@ void setup() {
   }
   Serial.println("Connected to WiFi");
 
+  WiFi.mode(WIFI_STA);
+
   local_pms.passiveMode();
   local_pms.wakeUp();
 
-  client.setServer(mqtt_server, mqtt_port);  // Set the MQTT server
-  client.setCallback(callback);  // Set the MQTT message callback function
+  // client.setServer(mqtt_server, mqtt_port);  // Set the MQTT server
+  // client.setCallback(callback);  // Set the MQTT message callback function
 
   // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -200,15 +204,21 @@ void setup() {
   esp_now_register_send_cb(onDataSent);
   esp_now_register_recv_cb(onDataRecv);
 
-  // Add peer (Broadcast)
+  // Remove existing peer if any
+  esp_now_del_peer(peerMACAddress);
+
+  // Configure the peer
   esp_now_peer_info_t peerInfo;
-  memset(peerInfo.peer_addr, 0xFF,
-         6);  // Set MAC address to Broadcast (FF:FF:FF:FF:FF:FF)
-  peerInfo.channel = 0;
-  peerInfo.encrypt = false;
+  memcpy(peerInfo.peer_addr, peerMACAddress,
+         6);                 // Set the MAC Address of the receiver
+  peerInfo.channel = WiFi.channel();      // Set to the same channel as Wi-Fi
+  peerInfo.encrypt = false;  // Disable encryption
+
+  // Add the peer
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
     Serial.println("Failed to add peer");
-    return;
+  } else {
+    Serial.println("Peer added successfully");
   }
 }
 
@@ -268,10 +278,11 @@ void loop() {
       return;
     }
     https.end();  // Close connection
-    if (!client.connected()) {
-      reconnect();  // Reconnect if not connected
-    }
-    client.loop();  // Maintain the MQTT connection
+
+    // if (!client.connected()) {
+    //   reconnect();  // Reconnect if not connected
+    // }
+    // client.loop();  // Maintain the MQTT connection
 
     PMS::DATA localPmsData;
     if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
