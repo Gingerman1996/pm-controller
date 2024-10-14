@@ -46,6 +46,15 @@ bool fanIsOn = false;
 float meanpm02 = 0;
 float ref[12];
 
+float pmValues[6] = {};
+
+// Weights used for each sensor
+float weights[] = {1.5, 1.5, 0.5, 1.5, 1.5, 1.0};
+
+// Number of sensors
+int numSensors = 6;
+
+
 PMS local_pms(Serial1);
 
 // ## MAX31790 ("4pin fan" controler - 6 channel) address
@@ -99,51 +108,22 @@ byte get_I2C_register(byte ADDRESS, byte REGISTER) {
   return x;
 }
 
-// Callback function for receiving MQTT messages
-void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
+// Function to calculate the weighted average
+float calculateWeightedAverage(float values[], float weights[], int numSensors) {
+  float weightedSum = 0.0;
+  float totalWeight = 0.0;
+
+  // Calculate the total weighted sum and total weight
+  for (int i = 0; i < numSensors; i++) {
+    weightedSum += values[i] * weights[i];
+    totalWeight += weights[i];
   }
-  Serial.println();
-}
 
-// Function to connect to the MQTT broker
-void reconnect() {
-  // Loop until successfully connected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Connect to MQTT using username and password
-    if (client.connect("ESP32Client", mqtt_user, mqtt_password)) {
-      Serial.println("connected");
-      // Subscribe to a topic if needed
-      client.subscribe("test/topic");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      delay(5000);  // Wait 5 seconds before retrying
-    }
-  }
-}
-
-// Callback function when data is sent
-void onDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
-  Serial.print("Request sent: ");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Failed");
-}
-
-// Callback function when data is received
-void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
-  memcpy(&myData, incomingData, sizeof(myData));
-  if (strcmp(myData.message, "FidasDataResponse") ==
-      0) {  // Check if it is a response message
-    Serial.println("Received response:");
-    Serial.print("PM2.5: ");
-    Serial.println(myData.pm25);
-    Serial.println();
+  // Return the weighted average
+  if (totalWeight == 0) {
+    return 0; // Prevent division by zero
+  } else {
+    return weightedSum / totalWeight;
   }
 }
 
@@ -198,33 +178,6 @@ void setup() {
   local_pms.passiveMode();
   local_pms.wakeUp();
 
-  // Initialize ESP-NOW
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("ESP-NOW initialization failed");
-    return;
-  }
-
-  // Register callbacks for sending and receiving data
-  esp_now_register_send_cb(onDataSent);
-  esp_now_register_recv_cb(onDataRecv);
-
-  // Remove existing peer if any
-  esp_now_del_peer(peerMACAddress);
-
-  // Configure the peer
-  esp_now_peer_info_t peerInfo;
-  memcpy(peerInfo.peer_addr, peerMACAddress,
-         6);                          // Set the MAC Address of the receiver
-  peerInfo.channel = WiFi.channel();  // Set to the same channel as Wi-Fi
-  peerInfo.encrypt = false;           // Disable encryption
-
-  // Add the peer
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Failed to add peer");
-  } else {
-    Serial.println("Peer added successfully");
-  }
-
   xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 2048, NULL, 1,
                           &Fan_controller_Handle, 1);
 }
@@ -269,15 +222,16 @@ void loop() {
           return;
         }
 
-        meanpm02 = (float(doc[0]["pm02"]) + float(doc[1]["pm02"]) +
-                    float(doc[2]["pm02"]) + float(doc[3]["pm02"]) +
-                    float(doc[4]["pm02"])) /
-                   5;
         for (int i = 0; i < 5; i++) {
           ref[i] = float(doc[i]["pm02"]);
           Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
+          pmValues[i] = doc[i]["pm02"];
         }
         Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
+        pmValues[5] = doc[12]["pm02"];
+
+        meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
+        
         Serial.print("Mean pm02: ");
         Serial.println(meanpm02);
         // setFanSpeed(10, float(doc[0]["pm02"]));
@@ -428,13 +382,13 @@ void Fan_controller(void* parameter) {
       }
 
       // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 100) {
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 10) {
         fanIsOn = false;
         // Serial.println("Force turn Off fan");
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
       }
-      else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 < 100 && fanIsOn == true) {
+      else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 < 10 && fanIsOn == true) {
         printLocalPM(localPmsDataValid, localPmsData);
       }
     }
