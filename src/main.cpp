@@ -191,9 +191,6 @@ void setup() {
   local_pms.passiveMode();
   local_pms.wakeUp();
 
-  // client.setServer(mqtt_server, mqtt_port);  // Set the MQTT server
-  // client.setCallback(callback);  // Set the MQTT message callback function
-
   // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
     Serial.println("ESP-NOW initialization failed");
@@ -250,6 +247,10 @@ void loop() {
         // Parse the JSON response
         DynamicJsonDocument doc(49152);
         DeserializationError error = deserializeJson(doc, payload);
+        
+        serializeJson(doc, Serial);
+        Serial.println();
+
         if (error) {
           https.end();  // Close connection
           Serial.print("deserializeJson() failed: ");
@@ -278,11 +279,6 @@ void loop() {
       return;
     }
     https.end();  // Close connection
-
-    // if (!client.connected()) {
-    //   reconnect();  // Reconnect if not connected
-    // }
-    // client.loop();  // Maintain the MQTT connection
 
     PMS::DATA localPmsData;
     if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
@@ -383,39 +379,6 @@ void loop() {
       } else {
         Serial.println("Request failed");
       }
-
-      // Publish fan status
-      // DynamicJsonDocument fanStatus(200);
-      // fanStatus["fan status"] = fanIsOn;
-      // char buffer1[128];
-      // size_t n1 = serializeJson(fanStatus, buffer1);
-      // client.publish("pm-controller/status/fan-status", buffer1, n1);
-
-      // // Publish PM2.5 information
-      // DynamicJsonDocument pmStatus(200);
-      // pmStatus["mean pm2.5"] = meanpm02;
-      // pmStatus["pm2.5 target"] = TARGET_PM02;
-      // char buffer2[128];
-      // size_t n2 = serializeJson(pmStatus, buffer2);
-      // client.publish("pm-controller/status/pm2.5", buffer2, n2);
-
-      // // Publish PM2.5 ref nformation
-      // DynamicJsonDocument pmRefStatus(200);
-      // pmRefStatus["Ref #1"] = ref[0];
-      // pmRefStatus["Ref #2"] = ref[1];
-      // pmRefStatus["Ref #3"] = ref[2];
-      // pmRefStatus["Ref #4"] = ref[3];
-      // pmRefStatus["Ref #5"] = ref[4];
-      // char buffer3[128];
-      // size_t n3 = serializeJson(pmRefStatus, buffer3);
-      // client.publish("pm-controller/status/pm2.5-ref", buffer3, n3);
-
-      // // Publish fan speed to grafana
-      // DynamicJsonDocument fanSpeed(200);
-      // fanSpeed["fan speed"] = fanSpeedPercent;
-      // char buffer4[128];
-      // size_t n4 = serializeJson(fanSpeed, buffer3);
-      // client.publish("pm-controller/status/fanspeed", buffer3, n4);
 
       // Print log
       Serial.print("Average PM2.5: ");
