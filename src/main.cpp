@@ -155,7 +155,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
   bool found = false;
 
   // Loop through the array to find an empty slot or a matching ID
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 128; i++) {
     if (boardsStruct[i].id == 0) {
       // Empty slot, add new board data here
       boardsStruct[i] = ESPNowData;
