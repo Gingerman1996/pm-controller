@@ -12,12 +12,12 @@ float Calculator::Kd = 0.01;  // Derivative gain
 
 
 float Calculator::getFanRunningInterval(float current, uint16_t target) {
-  Serial.println("Use Calculation V1");
+  // Serial.println("Use Calculation V1");
   return current < target ? pow(target - current, 0.7) * 1350 * 2 : 0;
 }
 
 float Calculator::getFanRunningIntervalV2(float startValue, uint16_t targetValue, uint16_t fanSpeedInPercent) {
-  Serial.println("Use Calculation V2");
+  // Serial.println("Use Calculation V2");
 
   //  ln((C_in - C0) / (C_in - C_target)) = (Q / V) * t
   //  t = (V / Q) * ln((C_in - C0) / (C_in - C_target))
@@ -30,8 +30,8 @@ float Calculator::getFanRunningIntervalV2(float startValue, uint16_t targetValue
 uint16_t Calculator::getFanRunSpeed(float current, uint16_t target) {
   // Calculate the PID control output for adjusting the fan speed
   float fanSpeedPID = calculatePID(current, target);
-  Serial.print("Fan Speed PID: ");
-  Serial.println(fanSpeedPID);
+  // Serial.print("Fan Speed PID: ");
+  // Serial.println(fanSpeedPID);
 
   // Calculate the minimum fan speed percentage based on air leakage and maximum airflow
   float minSpeedPercent = (ROOM_AIR_LEAK_M3H / FAN_MAX_AIR_FLOW_M3H) * 100 * 2;
@@ -47,12 +47,12 @@ uint16_t Calculator::scaleDutyCycle(const uint16_t dutyCycle) {
 // Function to calculate the PID output
 float Calculator::calculatePID(float current, uint16_t target) {
   // Calculate the error (difference between target and current value)
-  Serial.print("Target PM: ");
-  Serial.print(target);
-  Serial.println("μg/m³");
-  Serial.print("Cruent PM: ");
-  Serial.print(current);
-  Serial.println("μg/m³");
+  // Serial.print("Target PM: ");
+  // Serial.print(target);
+  // Serial.println("μg/m³");
+  // Serial.print("Cruent PM: ");
+  // Serial.print(current);
+  // Serial.println("μg/m³");
 
   // If the current dust level is greater than or equal to the target, set fan speed to 0
   if (current >= target) {
@@ -102,7 +102,7 @@ float Calculator::calculatePID(float current, uint16_t target) {
   if (fanSpeed > maxFanSpeed) fanSpeed = maxFanSpeed;
 
   // Return the calculated fan speed
-  Serial.print("fanSpeed from PID functuion: ");
-  Serial.println(fanSpeed);
+  // Serial.print("fanSpeed from PID functuion: ");
+  // Serial.println(fanSpeed);
   return fanSpeed;
 }

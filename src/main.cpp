@@ -14,6 +14,13 @@ int Trig1 = 2;
 #define NP 2   // number of TACH pulse per revolution
 // Wire and functions
 
+// Multi-task parameter
+TaskHandle_t Fan_controller_Handle = NULL;
+const TickType_t xDelay100m = pdMS_TO_TICKS(100);
+
+void Fan_controller(void* parameter);
+void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
+
 // Network credentials
 const char* ssid = "ag-diamond_2.4GHz";
 const char* password = "0505563014466";
@@ -37,7 +44,7 @@ float duration = 0;
 float interval_s = 0;
 bool fanIsOn = false;
 float meanpm02 = 0;
-float ref[5];
+float ref[12];
 
 PMS local_pms(Serial1);
 
@@ -207,9 +214,9 @@ void setup() {
   // Configure the peer
   esp_now_peer_info_t peerInfo;
   memcpy(peerInfo.peer_addr, peerMACAddress,
-         6);                 // Set the MAC Address of the receiver
-  peerInfo.channel = WiFi.channel();      // Set to the same channel as Wi-Fi
-  peerInfo.encrypt = false;  // Disable encryption
+         6);                          // Set the MAC Address of the receiver
+  peerInfo.channel = WiFi.channel();  // Set to the same channel as Wi-Fi
+  peerInfo.encrypt = false;           // Disable encryption
 
   // Add the peer
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
@@ -217,6 +224,9 @@ void setup() {
   } else {
     Serial.println("Peer added successfully");
   }
+
+  xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 2048, NULL, 1,
+                          &Fan_controller_Handle, 1);
 }
 
 int MultiplicationCombine(unsigned int x_high, unsigned int x_low) {
@@ -247,9 +257,9 @@ void loop() {
         // Parse the JSON response
         DynamicJsonDocument doc(49152);
         DeserializationError error = deserializeJson(doc, payload);
-        
-        serializeJson(doc, Serial);
-        Serial.println();
+
+        // serializeJsonPretty(doc[12], Serial);
+        // Serial.println();
 
         if (error) {
           https.end();  // Close connection
@@ -267,6 +277,7 @@ void loop() {
           ref[i] = float(doc[i]["pm02"]);
           Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
         }
+        Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
         Serial.print("Mean pm02: ");
         Serial.println(meanpm02);
         // setFanSpeed(10, float(doc[0]["pm02"]));
@@ -280,65 +291,10 @@ void loop() {
     }
     https.end();  // Close connection
 
-    PMS::DATA localPmsData;
-    if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
-      pmsReadTs = millis();
-      while (Serial1.available()) {
-        Serial1.read();
-      }
-      Serial.println("Send read request...");
-      local_pms.requestRead();
-      localPmsDataValid = local_pms.readUntil(localPmsData);
-    }
-
     // Setting interval length based on time
     interval_s = millis() - bootTime > INIT_INTERVAL_SECONDS * 1000
                      ? REG_INTERVAL_SECONDS
                      : INIT_INTERVAL_SECONDS;
-
-    if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
-      fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
-      duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
-                                                     fanSpeedPercent);
-
-      fanIsOn = true;
-      intervalTs = now;
-      durationTs = millis();
-      uint16_t pwm_bit = Calculator::scaleDutyCycle(fanSpeedPercent);
-
-      pwm_bit = pwm_bit << 7;
-      byte pwm0 = pwm_bit >> 8;
-      byte pwm1 = pwm_bit;
-      set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
-      set_I2C_register(MAX31790, 0x41, pwm1);
-
-      Serial.print("Turn On fan: ");
-      Serial.println(millis());
-      Serial.print("PWM bit: ");
-      Serial.println(pwm_bit);
-    } else {
-      fanIsOn = false;
-      Serial.println("Force turn Off fan");
-      set_I2C_register(MAX31790, 0x40, 0);
-      set_I2C_register(MAX31790, 0x41, 0);
-      Serial.print("Mean PM2.5: ");
-      Serial.print(meanpm02);
-      Serial.println("μg/m³");
-      Serial.print("Local PMS status: ");
-      if (localPmsDataValid) {
-        Serial.println("TRUE");
-      } else {
-        Serial.println("FALSE");
-      }
-    }
-
-    // if close sensor find reach the target will stop the fan
-    if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 100) {
-      fanIsOn = false;
-      Serial.println("Force turn Off fan");
-      set_I2C_register(MAX31790, 0x40, 0);
-      set_I2C_register(MAX31790, 0x41, 0);
-    }
 
     // Read smth
     data0 = get_I2C_register(MAX31790, 0x22);  // Tach1 count
@@ -354,31 +310,6 @@ void loop() {
       pre2 = millis();
       digitalWrite(Trig1, HIGH);
       Serial.println();
-
-      if (localPmsDataValid) {
-        Serial.println("PMS data is valid.");
-        Serial.print("Local PM 1.0 (ug/m3): ");
-        Serial.println(localPmsData.PM_AE_UG_1_0);
-
-        Serial.print("Local PM 2.5 (ug/m3): ");
-        Serial.println(localPmsData.PM_AE_UG_2_5);
-
-        Serial.print("Local PM 10.0 (ug/m3): ");
-        Serial.println(localPmsData.PM_AE_UG_10_0);
-
-        Serial.println();
-      }
-
-      // Send "GetFidasData" request
-      strcpy(myData.message, "GetFidasData");
-      esp_err_t result = esp_now_send(NULL, (uint8_t*)&myData,
-                                      sizeof(myData));  // Send to Broadcast
-
-      if (result == ESP_OK) {
-        Serial.println("Requesting 'GetFidasData'...");
-      } else {
-        Serial.println("Request failed");
-      }
 
       // Print log
       Serial.print("Average PM2.5: ");
@@ -397,18 +328,116 @@ void loop() {
       Serial.print(fanSpeedPercent);
       Serial.println(" %");
 
-      t = millis();
-      Serial.print("t[s]= ");
-      Serial.print(t / 1000.0, 3);
-      Serial.print("\t calculated pulse duration: ");
-      Serial.print(duration / 1000);
-      Serial.println(" seconds");
-      digitalWrite(Trig1, LOW);
-      Serial.print("\t curent interval[s]: ");
-      Serial.print(interval_s);
-      Serial.println(" seconds");
-      Serial.print("\t next pulse in ");
-      Serial.println(interval_s - (t / 1000 % int(interval_s)));
+      // PMS::DATA localPmsData;
+      // if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
+      //   pmsReadTs = millis();
+      //   while (Serial1.available()) {
+      //     Serial1.read();
+      //   }
+      //   Serial.println("Send read request...");
+      //   local_pms.requestRead();
+      //   localPmsDataValid = local_pms.readUntil(localPmsData);
+      // }
+
+      // void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
+
+      // t = millis();
+      // Serial.print("t[s]= ");
+      // Serial.print(t / 1000.0, 3);
+      // Serial.print("\t calculated pulse duration: ");
+      // Serial.print(duration / 1000);
+      // Serial.println(" seconds");
+      // digitalWrite(Trig1, LOW);
+      // Serial.print("\t curent interval[s]: ");
+      // Serial.print(interval_s);
+      // Serial.println(" seconds");
+      // Serial.print("\t next pulse in ");
+      // Serial.println(interval_s - (t / 1000 % int(interval_s)));
     }
+  }
+}
+
+void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData)
+{
+  if (localPmsDataValid) {
+        Serial.println("PMS data is valid.");
+        Serial.print("Local PM 1.0 (ug/m3): ");
+        Serial.println(localPmsData.PM_AE_UG_1_0);
+
+        Serial.print("Local PM 2.5 (ug/m3): ");
+        Serial.println(localPmsData.PM_AE_UG_2_5);
+
+        Serial.print("Local PM 10.0 (ug/m3): ");
+        Serial.println(localPmsData.PM_AE_UG_10_0);
+
+        Serial.println();
+      }
+}
+
+void Fan_controller(void* parameter) {
+  unsigned long now = millis();
+  bool localPmsDataValid = false;
+
+  while (true) {
+    if (WiFi.status() == WL_CONNECTED) {
+      PMS::DATA localPmsData;
+      if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
+        pmsReadTs = millis();
+        while (Serial1.available()) {
+          Serial1.read();
+        }
+        // Serial.println("Send read request...");
+        local_pms.requestRead();
+        localPmsDataValid = local_pms.readUntil(localPmsData);
+      }
+
+      if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
+        fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
+        duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
+                                                       fanSpeedPercent);
+
+        fanIsOn = true;
+        intervalTs = now;
+        durationTs = millis();
+        uint16_t pwm_bit = Calculator::scaleDutyCycle(fanSpeedPercent);
+
+        pwm_bit = pwm_bit << 7;
+        byte pwm0 = pwm_bit >> 8;
+        byte pwm1 = pwm_bit;
+        set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
+        set_I2C_register(MAX31790, 0x41, pwm1);
+
+        // Serial.print("Turn On fan: ");
+        // Serial.println(millis());
+        // Serial.print("PWM bit: ");
+        // Serial.println(pwm_bit);
+      } else {
+        fanIsOn = false;
+        // Serial.println("Force turn Off fan");
+        set_I2C_register(MAX31790, 0x40, 0);
+        set_I2C_register(MAX31790, 0x41, 0);
+        // Serial.print("Mean PM2.5: ");
+        // Serial.print(meanpm02);
+        // Serial.println("μg/m³");
+        // Serial.print("Local PMS status: ");
+        // if (localPmsDataValid) {
+        //   Serial.println("TRUE");
+        // } else {
+        //   Serial.println("FALSE");
+        // }
+      }
+
+      // if close sensor find reach the target will stop the fan
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 75) {
+        fanIsOn = false;
+        // Serial.println("Force turn Off fan");
+        set_I2C_register(MAX31790, 0x40, 0);
+        set_I2C_register(MAX31790, 0x41, 0);
+      }
+      else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 < 75 && fanIsOn == true) {
+        printLocalPM(localPmsDataValid, localPmsData);
+      }
+    }
+    vTaskDelay(xDelay100m);
   }
 }
