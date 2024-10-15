@@ -460,13 +460,13 @@ void Fan_controller(void* parameter) {
       }
 
       // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 85) {
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 8.5) {
         fanIsOn = false;
         // Serial.println("Force turn Off fan");
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
       }
-      else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 < 85 && fanIsOn == true) {
+      else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 8.5 && fanIsOn == true) {
         
       }
     }
