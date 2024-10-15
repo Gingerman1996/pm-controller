@@ -127,6 +127,69 @@ float calculateWeightedAverage(float values[], float weights[], int numSensors) 
   }
 }
 
+typedef struct ESPNow_message {
+    uint64_t id;   // Serial number of ESP (MAC address)
+    float pm25;    // PM2.5 value
+    float humi;    // Humidity value
+    float temp;    // Temperature value
+} ESPNow_message;
+
+// Create a struct_message called ESPNowData
+ESPNow_message ESPNowData;
+
+// Create a structure to hold the readings from each board
+ESPNow_message boardsStruct[128];
+
+// callback function that will be executed when data is received
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
+  char macStr[18];
+  Serial.print("Packet received from: ");
+  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+  Serial.println(macStr);
+
+  // Copy the incoming data into ESPNowData
+  memcpy(&ESPNowData, incomingData, sizeof(ESPNowData));
+  Serial.printf("Board ID (dec): %u, Board ID (hex): %X: %u bytes\n", ESPNowData.id, ESPNowData.id, len);
+
+  bool found = false;
+
+  // Loop through the array to find an empty slot or a matching ID
+  for (int i = 0; i < 128; i++) {
+    if (boardsStruct[i].id == 0) {
+      // Empty slot, add new board data here
+      boardsStruct[i] = ESPNowData;
+      Serial.printf("New board added at index %d with ID (hex): %X\n", i, ESPNowData.id);
+      found = true;
+      break;
+    } else if (boardsStruct[i].id == ESPNowData.id) {
+      // ID matches, update existing board data
+      boardsStruct[i].pm25 = ESPNowData.pm25;
+      boardsStruct[i].temp = ESPNowData.temp;
+      boardsStruct[i].humi = ESPNowData.humi;
+      Serial.printf("Updated board at index %d with ID (hex): %X\n", i, ESPNowData.id);
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    // No empty slot and no matching ID found
+    Serial.println("No available slot or matching ID to store data.");
+  }
+
+  // Print the values of the updated/added board
+  for (int i = 0; i < 3; i++) {
+    if (boardsStruct[i].id != 0) {
+      Serial.printf("Index %d - Board ID (hex): %X\n", i, boardsStruct[i].id);
+      Serial.printf("PM2.5: %.2f\n", boardsStruct[i].pm25);
+      Serial.printf("Temp: %.2f\n", boardsStruct[i].temp);
+      Serial.printf("Humi: %.2f\n", boardsStruct[i].humi);
+      Serial.println();
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   Serial1.begin(9600, SERIAL_8N1, 26, 25);
@@ -165,6 +228,8 @@ void setup() {
   pinMode(Trig1, OUTPUT);
   digitalWrite(Trig1, LOW);
   Serial.println("Setup Done");
+
+  WiFi.mode(WIFI_STA);
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -177,6 +242,16 @@ void setup() {
 
   local_pms.passiveMode();
   local_pms.wakeUp();
+
+  //Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+  
+  // Once ESPNow is successfully Init, we will register for recv CB to
+  // get recv packer info
+  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
 
   xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 2048, NULL, 1,
                           &Fan_controller_Handle, 1);
