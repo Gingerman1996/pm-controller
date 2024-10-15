@@ -49,7 +49,7 @@ float ref[12];
 float pmValues[6] = {};
 
 // Weights used for each sensor
-float weights[] = {1.5, 1.5, 0.5, 1.5, 1.5, 1.0};
+float weights[] = {1.5, 1.5, 1.5, 1.5, 1.5, 1.0};
 
 // Number of sensors
 int numSensors = 6;
@@ -70,7 +70,7 @@ byte data, data0, data1;
       // concentration
 #define PMS_READ_INTERVAL_SECONDS 1
 const unsigned int TARGET_PM02 =
-    10;  // target pm2.5 concentration in micrograms per cubic meter
+    5;  // target pm2.5 concentration in micrograms per cubic meter
 
 // MQTT Config
 const char* mqtt_server = "192.168.100.67";
@@ -292,6 +292,8 @@ void loop() {
       //   local_pms.requestRead();
       //   localPmsDataValid = local_pms.readUntil(localPmsData);
       // }
+      // printLocalPM(localPmsDataValid, localPmsData);
+      // Serial.printf("WiFi Channel: %d\n", WiFi.channel());
 
       // void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
 
@@ -343,6 +345,7 @@ void Fan_controller(void* parameter) {
         // Serial.println("Send read request...");
         local_pms.requestRead();
         localPmsDataValid = local_pms.readUntil(localPmsData);
+        printLocalPM(localPmsDataValid, localPmsData);
       }
 
       if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
@@ -382,14 +385,14 @@ void Fan_controller(void* parameter) {
       }
 
       // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 10) {
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 85) {
         fanIsOn = false;
         // Serial.println("Force turn Off fan");
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
       }
-      else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 < 10 && fanIsOn == true) {
-        printLocalPM(localPmsDataValid, localPmsData);
+      else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 < 85 && fanIsOn == true) {
+        
       }
     }
     vTaskDelay(xDelay100m);
