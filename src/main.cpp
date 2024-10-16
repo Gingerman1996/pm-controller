@@ -1,7 +1,9 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
+#include <NTPClient.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <Wire.h>
 #include <esp_now.h>
 
@@ -13,37 +15,44 @@
 int Trig1 = 2;
 #define _SR 4  // speed range
 #define NP 2   // number of TACH pulse per revolution
-// Wire and functions
 
 // Multi-task parameter
 TaskHandle_t Fan_controller_Handle = NULL;
 const TickType_t xDelay100m = pdMS_TO_TICKS(100);
 
-void Fan_controller(void* parameter);
+void Fan_controller(void *parameter);
 void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
 
 // Network credentials
-const char* ssid = "ag-diamond_2.4GHz";
-const char* password = "0505563014466";
-const char* APSSID = "ESP32_Master_AP";
+const char *ssid = "ag-diamond_2.4GHz";
+const char *password = "0505563014466";
+const char *APSSID = "ESP32_Master_AP";
 ESPNowMaster espNowMaster(ssid, password, APSSID);
 
+// NTP Client to get time
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 0,
+                     60000);  // Update time every 60 seconds
+
 // API URL
-const char* apiUrl =
+const char *apiUrl =
     "https://api.airgradient.com/public/api/v1/locations/measures/"
     "current?token=dadf4720-44da-4906-bd4f-9a57d6e073a4";
 
 unsigned long bootTime =
     millis();  // gives time since startup in ms. Overflow after 50 days.
 unsigned long t = millis();
-// uint16_t loop_cnt = 0; //loop count
+
+// Loop variables
 const int D = 50;              // delay between loops in ms
 unsigned long intervalTs = 0;  // timestamp for controlling interval
 unsigned long durationTs = 0;  // timestamp for controlling fan duration
 unsigned long pre2 = 0;        // timestamp for controlling print interval
-unsigned long pre2_1 = 0;      // timestamp for getdata print interval
-unsigned long pre2_11 = 0;     // timestamp for get mean data print interval
+unsigned long pre2_1 = 0;      // timestamp for printing board data
+unsigned long pre2_11 = 0;     // timestamp for printing weighted average
 unsigned long pmsReadTs = 0;   // timestamp for controlling PMS reading interval
+unsigned long printTimestamp =
+    0;  // timestamp for controlling print interval (3 seconds)
 unsigned int fanSpeedPercent = 0;
 float duration = 0;
 float interval_s = 0;
@@ -51,7 +60,7 @@ bool fanIsOn = false;
 float meanpm02 = 0;
 float ref[12];
 
-// float pmValues[6] = {};
+// PM values and weights
 uint64_t boardId;
 float pm25, temp, humi;
 unsigned long timestamp;
@@ -59,16 +68,10 @@ float pmValues[128] = {0};
 float weights[128] = {1.0};
 int numSensors = 0;
 
-// Weights used for each sensor
-// float weights[] = {1.5, 1.5, 1.5, 1.5, 1.5, 1.0};
-
-// Number of sensors
-int numSensors = 6;
-
+// PMS sensor
 PMS local_pms(Serial1);
 
-// ## MAX31790 ("4pin fan" controler - 6 channel) address
-// Address
+// ## MAX31790 ("4pin fan" controller - 6 channel) address
 const byte MAX31790 = 0x23;
 byte data, data0, data1;
 
@@ -122,35 +125,29 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(9600, SERIAL_8N1, 26, 25);
   delay(1000);
-  while (!Serial);  // wait for serial monitor to be monitoring ^^
+  while (!Serial) {
+    // wait for serial monitor to be monitoring
+  }
 
   // Set and scan I²C bus
   Wire.begin();
   pinMode(13, INPUT_PULLUP);
+
   // Reset MAX31790 (POR)
   set_I2C_register(MAX31790, 0x00, B01010000);  // reset
   delay(100);
-  // set_I2C_register(MAX31790, 0x00, B00110000); //no I�Ctime-out
 
   // PWM Frequency       first 4 bits 0111 (0-10V), next 4 bits 1011 (PWM)
-  set_I2C_register(MAX31790, 0x01, B01101010);  // 1.25kHz.  0x
+  set_I2C_register(MAX31790, 0x01, B01101010);  // 1.25kHz
   delay(1);
 
   // Configuration
   data = B00001000;  // PWM mode - 'Spin-up' OFF - control ON - Tach count- PWM
                      // yeah
-  set_I2C_register(MAX31790, 0x02, data);
-  delay(1);
-  set_I2C_register(MAX31790, 0x03, data);
-  delay(1);
-  set_I2C_register(MAX31790, 0x04, data);
-  delay(1);
-  set_I2C_register(MAX31790, 0x05, data);
-  delay(1);
-  set_I2C_register(MAX31790, 0x06, data);
-  delay(1);
-  set_I2C_register(MAX31790, 0x07, data);
-  delay(1);
+  for (int i = 0x02; i <= 0x07; i++) {
+    set_I2C_register(MAX31790, i, data);
+    delay(1);
+  }
 
   // Pin for monitoring loop
   pinMode(Trig1, OUTPUT);
@@ -168,6 +165,10 @@ void setup() {
     return;
   }
 
+  // Initialize NTP client
+  timeClient.begin();
+  timeClient.update();
+
   xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 2048, NULL, 1,
                           &Fan_controller_Handle, 1);
 }
@@ -183,6 +184,11 @@ int MultiplicationCombine(unsigned int x_high, unsigned int x_low) {
 void loop() {
   unsigned long now = millis();
   bool localPmsDataValid = false;
+
+  // Update NTP time
+  timeClient.update();
+  unsigned long currentNtpTime = timeClient.getEpochTime();
+
   // Make HTTPS request
   if (WiFi.status() == WL_CONNECTED) {
     // // Get data from Server
@@ -237,13 +243,17 @@ void loop() {
     // https.end();  // Close connection
 
     // Get data via ESP-NOW
+    numSensors = 0;  // Reset sensor count for each loop
     for (int i = 0; i < 128; i++) {
       if (espNowMaster.getBoardId(i, boardId)) {
         if (espNowMaster.getData(boardId, pm25, temp, humi, timestamp)) {
-          pmValues[numSensors] = pm25;
-          weights[numSensors] =
-              1.0;  // Set weight to 1.0 for equal weighting, can be changed
-          numSensors++;
+          // Check if data is newer than 5 seconds using NTP timestamp
+          if ((currentNtpTime - timestamp) <= 5) {
+            pmValues[numSensors] = pm25;
+            weights[numSensors] =
+                1.0;  // Set weight to 1.0 for equal weighting, can be changed
+            numSensors++;
+          }
 
           if (millis() > pre2_1 + 2000) {
             pre2_1 = millis();
@@ -328,7 +338,7 @@ void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
   }
 }
 
-void Fan_controller(void* parameter) {
+void Fan_controller(void *parameter) {
   unsigned long now = millis();
   bool localPmsDataValid = false;
 
