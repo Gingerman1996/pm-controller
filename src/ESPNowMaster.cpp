@@ -56,17 +56,17 @@ void ESPNowMaster::onDataRecv(const uint8_t *macAddr, const uint8_t *incomingDat
     }
 
     char macStr[18];
-    Serial.print("Packet received from: ");
+    // Serial.print("Packet received from: ");
     snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
              macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
-    Serial.println(macStr);
+    // Serial.println(macStr);
 
     ESPNow_message ESPNowData;
     memcpy(&ESPNowData, incomingData, sizeof(ESPNowData));
 
     // Use instance to access timeClient
     ESPNowData.timestamp = instance->timeClient.getEpochTime();
-    Serial.printf("Board ID (dec): %llu, Board ID (hex): %llX: %d bytes\n", ESPNowData.id, ESPNowData.id, len);
+    // Serial.printf("Board ID (dec): %llu, Board ID (hex): %llX: %d bytes\n", ESPNowData.id, ESPNowData.id, len);
 
     bool found = false;
 
@@ -74,12 +74,12 @@ void ESPNowMaster::onDataRecv(const uint8_t *macAddr, const uint8_t *incomingDat
     for (int i = 0; i < 128; i++) {
         if (boardsStruct[i].id == 0) {
             boardsStruct[i] = ESPNowData;
-            Serial.printf("New board added at index %d with ID (hex): %llX\n", i, ESPNowData.id);
+            // Serial.printf("New board added at index %d with ID (hex): %llX\n", i, ESPNowData.id);
             found = true;
             break;
         } else if (boardsStruct[i].id == ESPNowData.id) {
             boardsStruct[i] = ESPNowData;
-            Serial.printf("Updated board at index %d with ID (hex): %llX\n", i, ESPNowData.id);
+            // Serial.printf("Updated board at index %d with ID (hex): %llX\n", i, ESPNowData.id);
             found = true;
             break;
         }

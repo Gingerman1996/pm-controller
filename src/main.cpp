@@ -83,7 +83,7 @@ byte data, data0, data1;
       // concentration
 #define PMS_READ_INTERVAL_SECONDS 1
 const unsigned int TARGET_PM02 =
-    5;  // target pm2.5 concentration in micrograms per cubic meter
+    20;  // target pm2.5 concentration in micrograms per cubic meter
 
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
@@ -255,15 +255,12 @@ void loop() {
             numSensors++;
           }
 
-          if (millis() > pre2_1 + 2000) {
-            pre2_1 = millis();
-            Serial.printf("Board ID: %llX\n", boardId);
-            Serial.printf("PM2.5: %.2f\n", pm25);
-            Serial.printf("Temperature: %.2f\n", temp);
-            Serial.printf("Humidity: %.2f\n", humi);
-            Serial.printf("Last Updated: %lu\n", timestamp);
-            Serial.println();
-          }
+          // Serial.printf("Board ID: %llX\n", boardId);
+          // Serial.printf("PM2.5: %.2f\n", pm25);
+          // Serial.printf("Temperature: %.2f\n", temp);
+          // Serial.printf("Humidity: %.2f\n", humi);
+          // Serial.printf("Last Updated: %lu\n", timestamp);
+          // Serial.println();
         }
       }
     }
@@ -378,13 +375,13 @@ void Fan_controller(void *parameter) {
       }
 
       // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 5) {
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 20) {
         fanIsOn = false;
         // Serial.println("Force turn Off fan");
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
       } else if (localPmsDataValid &&
-                 localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 5 &&
+                 localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 20 &&
                  fanIsOn == true) {
       }
     }
