@@ -6,6 +6,7 @@
 #include <esp_now.h>
 
 #include "Calculator.h"
+#include "ESPNowMaster.h"
 #include "PMS.h"
 
 // Pin for monitoring loop
@@ -24,6 +25,8 @@ void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
 // Network credentials
 const char* ssid = "ag-diamond_2.4GHz";
 const char* password = "0505563014466";
+const char* APSSID = "ESP32_Master_AP";
+ESPNowMaster espNowMaster(ssid, password, APSSID);
 
 // API URL
 const char* apiUrl =
@@ -38,6 +41,8 @@ const int D = 50;              // delay between loops in ms
 unsigned long intervalTs = 0;  // timestamp for controlling interval
 unsigned long durationTs = 0;  // timestamp for controlling fan duration
 unsigned long pre2 = 0;        // timestamp for controlling print interval
+unsigned long pre2_1 = 0;      // timestamp for getdata print interval
+unsigned long pre2_11 = 0;     // timestamp for get mean data print interval
 unsigned long pmsReadTs = 0;   // timestamp for controlling PMS reading interval
 unsigned int fanSpeedPercent = 0;
 float duration = 0;
@@ -46,14 +51,19 @@ bool fanIsOn = false;
 float meanpm02 = 0;
 float ref[12];
 
-float pmValues[6] = {};
+// float pmValues[6] = {};
+uint64_t boardId;
+float pm25, temp, humi;
+unsigned long timestamp;
+float pmValues[128] = {0};
+float weights[128] = {1.0};
+int numSensors = 0;
 
 // Weights used for each sensor
-float weights[] = {1.5, 1.5, 1.5, 1.5, 1.5, 1.0};
+// float weights[] = {1.5, 1.5, 1.5, 1.5, 1.5, 1.0};
 
 // Number of sensors
 int numSensors = 6;
-
 
 PMS local_pms(Serial1);
 
@@ -72,26 +82,6 @@ byte data, data0, data1;
 const unsigned int TARGET_PM02 =
     5;  // target pm2.5 concentration in micrograms per cubic meter
 
-// MQTT Config
-const char* mqtt_server = "192.168.100.67";
-const int mqtt_port = 1883;
-const char* mqtt_user = "pmController_esp32";
-const char* mqtt_password = "TanapaT41894";
-
-// Create WiFi and MQTT client objects
-WiFiClient espClient;
-PubSubClient client(espClient);
-
-// Define the structure for the message
-typedef struct struct_message {
-  char message[32];  // Message to send
-  float pm25;        // PM2.5 value
-} struct_message;
-
-struct_message myData;
-
-uint8_t peerMACAddress[] = {0x34, 0xB7, 0xDA, 0xBD, 0x94, 0xF4};
-
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
   Wire.write(REGISTER);
@@ -109,7 +99,8 @@ byte get_I2C_register(byte ADDRESS, byte REGISTER) {
 }
 
 // Function to calculate the weighted average
-float calculateWeightedAverage(float values[], float weights[], int numSensors) {
+float calculateWeightedAverage(float values[], float weights[],
+                               int numSensors) {
   float weightedSum = 0.0;
   float totalWeight = 0.0;
 
@@ -121,72 +112,9 @@ float calculateWeightedAverage(float values[], float weights[], int numSensors) 
 
   // Return the weighted average
   if (totalWeight == 0) {
-    return 0; // Prevent division by zero
+    return 0;  // Prevent division by zero
   } else {
     return weightedSum / totalWeight;
-  }
-}
-
-typedef struct ESPNow_message {
-    uint64_t id;   // Serial number of ESP (MAC address)
-    float pm25;    // PM2.5 value
-    float humi;    // Humidity value
-    float temp;    // Temperature value
-} ESPNow_message;
-
-// Create a struct_message called ESPNowData
-ESPNow_message ESPNowData;
-
-// Create a structure to hold the readings from each board
-ESPNow_message boardsStruct[128];
-
-// callback function that will be executed when data is received
-void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
-  char macStr[18];
-  Serial.print("Packet received from: ");
-  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
-           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-  Serial.println(macStr);
-
-  // Copy the incoming data into ESPNowData
-  memcpy(&ESPNowData, incomingData, sizeof(ESPNowData));
-  Serial.printf("Board ID (dec): %u, Board ID (hex): %X: %u bytes\n", ESPNowData.id, ESPNowData.id, len);
-
-  bool found = false;
-
-  // Loop through the array to find an empty slot or a matching ID
-  for (int i = 0; i < 128; i++) {
-    if (boardsStruct[i].id == 0) {
-      // Empty slot, add new board data here
-      boardsStruct[i] = ESPNowData;
-      Serial.printf("New board added at index %d with ID (hex): %X\n", i, ESPNowData.id);
-      found = true;
-      break;
-    } else if (boardsStruct[i].id == ESPNowData.id) {
-      // ID matches, update existing board data
-      boardsStruct[i].pm25 = ESPNowData.pm25;
-      boardsStruct[i].temp = ESPNowData.temp;
-      boardsStruct[i].humi = ESPNowData.humi;
-      Serial.printf("Updated board at index %d with ID (hex): %X\n", i, ESPNowData.id);
-      found = true;
-      break;
-    }
-  }
-
-  if (!found) {
-    // No empty slot and no matching ID found
-    Serial.println("No available slot or matching ID to store data.");
-  }
-
-  // Print the values of the updated/added board
-  for (int i = 0; i < 3; i++) {
-    if (boardsStruct[i].id != 0) {
-      Serial.printf("Index %d - Board ID (hex): %X\n", i, boardsStruct[i].id);
-      Serial.printf("PM2.5: %.2f\n", boardsStruct[i].pm25);
-      Serial.printf("Temp: %.2f\n", boardsStruct[i].temp);
-      Serial.printf("Humi: %.2f\n", boardsStruct[i].humi);
-      Serial.println();
-    }
   }
 }
 
@@ -229,29 +157,16 @@ void setup() {
   digitalWrite(Trig1, LOW);
   Serial.println("Setup Done");
 
-  WiFi.mode(WIFI_STA);
-  // Connect to Wi-Fi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
-  }
-  Serial.println("Connected to WiFi");
-
-  WiFi.mode(WIFI_STA);
+  espNowMaster.begin();
 
   local_pms.passiveMode();
   local_pms.wakeUp();
 
-  //Init ESP-NOW
+  // Init ESP-NOW
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
-  
-  // Once ESPNow is successfully Init, we will register for recv CB to
-  // get recv packer info
-  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
 
   xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 2048, NULL, 1,
                           &Fan_controller_Handle, 1);
@@ -270,55 +185,89 @@ void loop() {
   bool localPmsDataValid = false;
   // Make HTTPS request
   if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient https;
-    https.begin(apiUrl);  // Specify the URL
-    // Perform the GET request
-    int httpCode = https.GET();
-    Serial.print("Get data from server with response code: ");
-    Serial.println(httpCode);
-    delay(1000);  // TODO: slow donw the sever polling
-    if (httpCode > 0) {
-      // Check if the GET request was successful
-      if (httpCode == HTTP_CODE_OK) {
-        String payload = https.getString();
+    // // Get data from Server
+    // HTTPClient https;
+    // https.begin(apiUrl);  // Specify the URL
+    // // Perform the GET request
+    // int httpCode = https.GET();
+    // Serial.print("Get data from server with response code: ");
+    // Serial.println(httpCode);
+    // delay(1000);  // TODO: slow donw the sever polling
+    // if (httpCode > 0) {
+    //   // Check if the GET request was successful
+    //   if (httpCode == HTTP_CODE_OK) {
+    //     String payload = https.getString();
 
-        // Parse the JSON response
-        DynamicJsonDocument doc(49152);
-        DeserializationError error = deserializeJson(doc, payload);
+    //     // Parse the JSON response
+    //     DynamicJsonDocument doc(49152);
+    //     DeserializationError error = deserializeJson(doc, payload);
 
-        // serializeJsonPretty(doc[12], Serial);
-        // Serial.println();
+    //     // serializeJsonPretty(doc[12], Serial);
+    //     // Serial.println();
 
-        if (error) {
-          https.end();  // Close connection
-          Serial.print("deserializeJson() failed: ");
-          Serial.println(error.c_str());
-          delay(10000);
-          return;
+    //     if (error) {
+    //       https.end();  // Close connection
+    //       Serial.print("deserializeJson() failed: ");
+    //       Serial.println(error.c_str());
+    //       delay(10000);
+    //       return;
+    //     }
+
+    //     for (int i = 0; i < 5; i++) {
+    //       ref[i] = float(doc[i]["pm02"]);
+    //       Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
+    //       pmValues[i] = doc[i]["pm02"];
+    //     }
+    //     Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
+    //     pmValues[5] = doc[12]["pm02"];
+
+    //     meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
+
+    //     Serial.print("Mean pm02: ");
+    //     Serial.println(meanpm02);
+    //     // setFanSpeed(10, float(doc[0]["pm02"]));
+    //   }
+    // } else {
+    //   https.end();  // Close connection
+    //   Serial.printf("GET request failed, error: %s\n",
+    //                 https.errorToString(httpCode).c_str());
+    //   delay(10000);
+    //   return;
+    // }
+    // https.end();  // Close connection
+
+    // Get data via ESP-NOW
+    uint64_t boardId;
+
+    for (int i = 0; i < 128; i++) {
+      if (espNowMaster.getBoardId(i, boardId)) {
+        if (espNowMaster.getData(boardId, pm25, temp, humi, timestamp)) {
+          if (millis() > pre2_1 + 2000) {
+            pre2_1 = millis();
+            Serial.printf("Board ID: %llX\n", boardId);
+            Serial.printf("PM2.5: %.2f\n", pm25);
+            Serial.printf("Temperature: %.2f\n", temp);
+            Serial.printf("Humidity: %.2f\n", humi);
+            Serial.printf("Last Updated: %lu\n", timestamp);
+            Serial.println();
+          }
         }
+      }
+    }
 
-        for (int i = 0; i < 5; i++) {
-          ref[i] = float(doc[i]["pm02"]);
-          Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
-          pmValues[i] = doc[i]["pm02"];
-        }
-        Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
-        pmValues[5] = doc[12]["pm02"];
-
-        meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
-        
-        Serial.print("Mean pm02: ");
-        Serial.println(meanpm02);
-        // setFanSpeed(10, float(doc[0]["pm02"]));
+    // Calculate the weighted average of PM2.5 values
+    if (numSensors > 0) {
+      meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
+      if (millis() > pre2_11 + 2000) {
+        pre2_11 = millis();
+        Serial.printf("Weighted Average PM2.5: %.2f\n", meanpm02);
       }
     } else {
-      https.end();  // Close connection
-      Serial.printf("GET request failed, error: %s\n",
-                    https.errorToString(httpCode).c_str());
-      delay(10000);
-      return;
+      Serial.println("No data available to calculate weighted average.");
     }
-    https.end();  // Close connection
+
+    // Check for timeout of boards every 30 seconds
+    espNowMaster.checkBoardTimeout();
 
     // Setting interval length based on time
     interval_s = millis() - bootTime > INIT_INTERVAL_SECONDS * 1000
@@ -388,21 +337,20 @@ void loop() {
   }
 }
 
-void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData)
-{
+void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
   if (localPmsDataValid) {
-        Serial.println("PMS data is valid.");
-        Serial.print("Local PM 1.0 (ug/m3): ");
-        Serial.println(localPmsData.PM_AE_UG_1_0);
+    Serial.println("PMS data is valid.");
+    Serial.print("Local PM 1.0 (ug/m3): ");
+    Serial.println(localPmsData.PM_AE_UG_1_0);
 
-        Serial.print("Local PM 2.5 (ug/m3): ");
-        Serial.println(localPmsData.PM_AE_UG_2_5);
+    Serial.print("Local PM 2.5 (ug/m3): ");
+    Serial.println(localPmsData.PM_AE_UG_2_5);
 
-        Serial.print("Local PM 10.0 (ug/m3): ");
-        Serial.println(localPmsData.PM_AE_UG_10_0);
+    Serial.print("Local PM 10.0 (ug/m3): ");
+    Serial.println(localPmsData.PM_AE_UG_10_0);
 
-        Serial.println();
-      }
+    Serial.println();
+  }
 }
 
 void Fan_controller(void* parameter) {
@@ -460,14 +408,14 @@ void Fan_controller(void* parameter) {
       }
 
       // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 8.5) {
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 5) {
         fanIsOn = false;
         // Serial.println("Force turn Off fan");
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
-      }
-      else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 8.5 && fanIsOn == true) {
-        
+      } else if (localPmsDataValid &&
+                 localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 5 &&
+                 fanIsOn == true) {
       }
     }
     vTaskDelay(xDelay100m);
