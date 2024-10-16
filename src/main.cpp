@@ -237,11 +237,14 @@ void loop() {
     // https.end();  // Close connection
 
     // Get data via ESP-NOW
-    uint64_t boardId;
-
     for (int i = 0; i < 128; i++) {
       if (espNowMaster.getBoardId(i, boardId)) {
         if (espNowMaster.getData(boardId, pm25, temp, humi, timestamp)) {
+          pmValues[numSensors] = pm25;
+          weights[numSensors] =
+              1.0;  // Set weight to 1.0 for equal weighting, can be changed
+          numSensors++;
+
           if (millis() > pre2_1 + 2000) {
             pre2_1 = millis();
             Serial.printf("Board ID: %llX\n", boardId);
@@ -305,34 +308,6 @@ void loop() {
       Serial.print("Fan speed is: ");
       Serial.print(fanSpeedPercent);
       Serial.println(" %");
-
-      // PMS::DATA localPmsData;
-      // if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
-      //   pmsReadTs = millis();
-      //   while (Serial1.available()) {
-      //     Serial1.read();
-      //   }
-      //   Serial.println("Send read request...");
-      //   local_pms.requestRead();
-      //   localPmsDataValid = local_pms.readUntil(localPmsData);
-      // }
-      // printLocalPM(localPmsDataValid, localPmsData);
-      // Serial.printf("WiFi Channel: %d\n", WiFi.channel());
-
-      // void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
-
-      // t = millis();
-      // Serial.print("t[s]= ");
-      // Serial.print(t / 1000.0, 3);
-      // Serial.print("\t calculated pulse duration: ");
-      // Serial.print(duration / 1000);
-      // Serial.println(" seconds");
-      // digitalWrite(Trig1, LOW);
-      // Serial.print("\t curent interval[s]: ");
-      // Serial.print(interval_s);
-      // Serial.println(" seconds");
-      // Serial.print("\t next pulse in ");
-      // Serial.println(interval_s - (t / 1000 % int(interval_s)));
     }
   }
 }
@@ -386,25 +361,10 @@ void Fan_controller(void* parameter) {
         byte pwm1 = pwm_bit;
         set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
         set_I2C_register(MAX31790, 0x41, pwm1);
-
-        // Serial.print("Turn On fan: ");
-        // Serial.println(millis());
-        // Serial.print("PWM bit: ");
-        // Serial.println(pwm_bit);
       } else {
         fanIsOn = false;
-        // Serial.println("Force turn Off fan");
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
-        // Serial.print("Mean PM2.5: ");
-        // Serial.print(meanpm02);
-        // Serial.println("μg/m³");
-        // Serial.print("Local PMS status: ");
-        // if (localPmsDataValid) {
-        //   Serial.println("TRUE");
-        // } else {
-        //   Serial.println("FALSE");
-        // }
       }
 
       // if close sensor find reach the target will stop the fan
