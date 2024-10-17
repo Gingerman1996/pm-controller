@@ -3,10 +3,13 @@
 #include <NTPClient.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
-#include "MyLog.h"
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <esp_now.h>
+
+#include "MyLog.h"
+
+#define USE_ESP_NOW
 
 #include "Calculator.h"
 #include "ESPNowMaster.h"
@@ -19,9 +22,13 @@ int Trig1 = 2;
 
 // Multi-task parameter
 TaskHandle_t Fan_controller_Handle = NULL;
+TaskHandle_t Data_acquisition_Handle = NULL;
+TaskHandle_t Http_request_Handle = NULL;
 const TickType_t xDelay100m = pdMS_TO_TICKS(100);
 
 void Fan_controller(void *parameter);
+void Data_acquisition(void *parameter);
+void Http_request(void *parameter);
 void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
 
 // Network credentials
@@ -153,7 +160,7 @@ void setup() {
   // Pin for monitoring loop
   pinMode(Trig1, OUTPUT);
   digitalWrite(Trig1, LOW);
-  MyLog::info("%s", String("Setup Done").c_str());
+  MyLog::debug("Setup Done");
 
   espNowMaster.begin();
 
@@ -162,7 +169,7 @@ void setup() {
 
   // Init ESP-NOW
   if (esp_now_init() != ESP_OK) {
-    MyLog::info("%s", String("Error initializing ESP-NOW").c_str());
+    MyLog::error("Error initializing ESP-NOW");
     return;
   }
 
@@ -172,6 +179,16 @@ void setup() {
 
   xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 2048, NULL, 1,
                           &Fan_controller_Handle, 1);
+
+#ifdef USE_ESP_NOW
+  xTaskCreatePinnedToCore(Data_acquisition, "Data_acquisition_task", 4096, NULL,
+                          1, &Data_acquisition_Handle, 1);
+#endif
+
+#ifndef USE_ESP_NOW
+  xTaskCreatePinnedToCore(Http_request, "Http_request_task", 4096, NULL, 1,
+                          &Http_request_Handle, 1);
+#endif
 }
 
 int MultiplicationCombine(unsigned int x_high, unsigned int x_low) {
@@ -183,102 +200,20 @@ int MultiplicationCombine(unsigned int x_high, unsigned int x_low) {
 }
 
 void loop() {
-  unsigned long now = millis();
-  bool localPmsDataValid = false;
+  // Empty loop as tasks are being handled separately
+}
 
-  // Update NTP time
-  timeClient.update();
-  unsigned long currentNtpTime = timeClient.getEpochTime();
+void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
+  if (localPmsDataValid) {
+    MyLog::info("PMS data is valid.");
+    MyLog::info("Local PM 1.0 (ug/m3): %.2f", localPmsData.PM_AE_UG_1_0);
+    MyLog::info("Local PM 2.5 (ug/m3): %.2f", localPmsData.PM_AE_UG_2_5);
+    MyLog::info("Local PM 10.0 (ug/m3): %.2f", localPmsData.PM_AE_UG_10_0);
+  }
+}
 
-  // Make HTTPS request
-  if (WiFi.status() == WL_CONNECTED) {
-    // // Get data from Server
-    // HTTPClient https;
-    // https.begin(apiUrl);  // Specify the URL
-    // // Perform the GET request
-    // int httpCode = https.GET();
-    // MyLog::info("%s", String("Get data from server with response code: ").c_str());
-    // MyLog::info("%s", String(httpCode).c_str());
-    // delay(1000);  // TODO: slow donw the sever polling
-    // if (httpCode > 0) {
-    //   // Check if the GET request was successful
-    //   if (httpCode == HTTP_CODE_OK) {
-    //     String payload = https.getString();
-
-    //     // Parse the JSON response
-    //     DynamicJsonDocument doc(49152);
-    //     DeserializationError error = deserializeJson(doc, payload);
-
-    //     // serializeJsonPretty(doc[12], Serial);
-    //     // MyLog::info("%s", String().c_str());
-
-    //     if (error) {
-    //       https.end();  // Close connection
-    //       MyLog::info("%s", String("deserializeJson() failed: ").c_str());
-    //       MyLog::info("%s", String(error.c_str()).c_str());
-    //       delay(10000);
-    //       return;
-    //     }
-
-    //     for (int i = 0; i < 5; i++) {
-    //       ref[i] = float(doc[i]["pm02"]);
-    //       Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
-    //       pmValues[i] = doc[i]["pm02"];
-    //     }
-    //     Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
-    //     pmValues[5] = doc[12]["pm02"];
-
-    //     meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
-
-    //     MyLog::info("%s", String("Mean pm02: ").c_str());
-    //     MyLog::info("%s", String(meanpm02).c_str());
-    //     // setFanSpeed(10, float(doc[0]["pm02"]));
-    //   }
-    // } else {
-    //   https.end();  // Close connection
-    //   Serial.printf("GET request failed, error: %s\n",
-    //                 https.errorToString(httpCode).c_str());
-    //   delay(10000);
-    //   return;
-    // }
-    // https.end();  // Close connection
-
-    // Get data via ESP-NOW
-    numSensors = 0;  // Reset sensor count for each loop
-    for (int i = 0; i < 128; i++) {
-      if (espNowMaster.getBoardId(i, boardId)) {
-        if (espNowMaster.getData(boardId, pm25, temp, humi, timestamp)) {
-          // Check if data is newer than 5 seconds using NTP timestamp
-          if ((currentNtpTime - timestamp) <= 5) {
-            pmValues[numSensors] = pm25;
-            weights[numSensors] =
-                1.0;  // Set weight to 1.0 for equal weighting, can be changed
-            numSensors++;
-          }
-          Serial.printf("Board ID: %llX\n", boardId);
-          Serial.printf("PM2.5: %.2f\n", pm25);
-          Serial.printf("Temperature: %.2f\n", temp);
-          Serial.printf("Humidity: %.2f\n", humi);
-          Serial.printf("Last Updated: %lu\n", timestamp);
-          MyLog::info("%s", String().c_str());
-        }
-      }
-    }
-
-    // Calculate the weighted average of PM2.5 values
-    if (numSensors > 0) {
-      meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
-      if (millis() > pre2_11 + 2000) {
-        pre2_11 = millis();
-        Serial.printf("Weighted Average PM2.5: %.2f\n", meanpm02);
-      }
-    } else {
-      MyLog::info("%s", String("No data available to calculate weighted average.").c_str());
-    }
-
-    // Check for timeout of boards every 30 seconds
-    espNowMaster.checkBoardTimeout();
-
+void Fan_controller(void *parameter) {
+  while (true) {
     // Setting interval length based on time
     interval_s = millis() - bootTime > INIT_INTERVAL_SECONDS * 1000
                      ? REG_INTERVAL_SECONDS
@@ -297,94 +232,157 @@ void loop() {
     if (millis() > pre2 + 2000) {
       pre2 = millis();
       digitalWrite(Trig1, HIGH);
-      MyLog::info("%s", String().c_str());
+      MyLog::info("Average PM2.5: %.2f", meanpm02);
+      MyLog::info("pm2.5_target=%u", TARGET_PM02);
+      MyLog::info("Fan is running: %s", fanIsOn ? "true" : "false");
+      MyLog::info("Fan speed is: %u %%", fanSpeedPercent);
+    }
+    unsigned long now = millis();
+    bool localPmsDataValid = false;
 
-      // Print log
-      MyLog::info("%s", String("Average PM2.5: ").c_str());
-      MyLog::info("%s", String(meanpm02).c_str());
+    while (true) {
+      if (WiFi.status() == WL_CONNECTED) {
+        PMS::DATA localPmsData;
+        if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
+          pmsReadTs = millis();
+          while (Serial1.available()) {
+            Serial1.read();
+          }
+          local_pms.requestRead();
+          localPmsDataValid = local_pms.readUntil(localPmsData);
+          printLocalPM(localPmsDataValid, localPmsData);
+        }
 
-      MyLog::info("%s", String(" pm2.5_target=").c_str());
-      // MyLog::info("%s", String(loop_cnt,DEC).c_str());
-      MyLog::info("%s", String("  ").c_str());
-      MyLog::info("%s", String(TARGET_PM02).c_str());
-      MyLog::info("%s", String("  ").c_str());
+        if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
+          fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
+          duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
+                                                         fanSpeedPercent);
 
-      MyLog::info("%s", String("Fan is running: ").c_str());
-      MyLog::info("%s", String(fanIsOn).c_str());
+          fanIsOn = true;
+          intervalTs = now;
+          durationTs = millis();
+          uint16_t pwm_bit = Calculator::scaleDutyCycle(fanSpeedPercent);
 
-      MyLog::info("%s", String("Fan speed is: ").c_str());
-      MyLog::info("%s", String(fanSpeedPercent).c_str());
-      MyLog::info("%s", String(" %").c_str());
+          pwm_bit = pwm_bit << 7;
+          byte pwm0 = pwm_bit >> 8;
+          byte pwm1 = pwm_bit;
+          set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
+          set_I2C_register(MAX31790, 0x41, pwm1);
+        } else {
+          fanIsOn = false;
+          set_I2C_register(MAX31790, 0x40, 0);
+          set_I2C_register(MAX31790, 0x41, 0);
+        }
+
+        // if close sensor find reach the target will stop the fan
+        if (localPmsDataValid &&
+            localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 20) {
+          fanIsOn = false;
+          set_I2C_register(MAX31790, 0x40, 0);
+          set_I2C_register(MAX31790, 0x41, 0);
+        } else if (localPmsDataValid &&
+                   localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 20 &&
+                   fanIsOn == true) {
+        }
+      }
+      vTaskDelay(xDelay100m);
     }
   }
 }
 
-void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
-  if (localPmsDataValid) {
-    MyLog::info("%s", String("PMS data is valid.").c_str());
-    MyLog::info("%s", String("Local PM 1.0 (ug/m3): ").c_str());
-    MyLog::info("%s", String(localPmsData.PM_AE_UG_1_0).c_str());
+void Data_acquisition(void *parameter) {
+  // Update NTP time
+  timeClient.update();
+  unsigned long currentNtpTime = timeClient.getEpochTime();
+  while (true) {
+    numSensors = 0;  // Reset sensor count for each loop
+    unsigned long currentNtpTime = timeClient.getEpochTime();
+    for (int i = 0; i < 128; i++) {
+      if (espNowMaster.getBoardId(i, boardId)) {
+        if (espNowMaster.getData(boardId, pm25, temp, humi, timestamp)) {
+          // Check if data is newer than 5 seconds using NTP timestamp
+          if ((currentNtpTime - timestamp) <= 5) {
+            pmValues[numSensors] = pm25;
+            weights[numSensors] =
+                1.0;  // Set weight to 1.0 for equal weighting, can be changed
+            numSensors++;
+          }
+          MyLog::info("Board ID: %llX", boardId);
+          MyLog::info("PM2.5: %.2f", pm25);
+          MyLog::info("Temperature: %.2f", temp);
+          MyLog::info("Humidity: %.2f", humi);
+          MyLog::info("Last Updated: %lu", timestamp);
+        }
+      }
+    }
 
-    MyLog::info("%s", String("Local PM 2.5 (ug/m3): ").c_str());
-    MyLog::info("%s", String(localPmsData.PM_AE_UG_2_5).c_str());
+    // Calculate the weighted average of PM2.5 values
+    if (numSensors > 0) {
+      meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
+      if (millis() > pre2_11 + 2000) {
+        pre2_11 = millis();
+        MyLog::info("Weighted Average PM2.5: %.2f", meanpm02);
+      }
+    } else {
+      MyLog::warn("No data available to calculate weighted average.");
+    }
 
-    MyLog::info("%s", String("Local PM 10.0 (ug/m3): ").c_str());
-    MyLog::info("%s", String(localPmsData.PM_AE_UG_10_0).c_str());
-
-    MyLog::info("%s", String().c_str());
+    // Check for timeout of boards every 30 seconds
+    espNowMaster.checkBoardTimeout();
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
-void Fan_controller(void *parameter) {
-  unsigned long now = millis();
-  bool localPmsDataValid = false;
-
+void Http_request(void *parameter) {
   while (true) {
     if (WiFi.status() == WL_CONNECTED) {
-      PMS::DATA localPmsData;
-      if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
-        pmsReadTs = millis();
-        while (Serial1.available()) {
-          Serial1.read();
+      HTTPClient https;
+      https.begin(apiUrl);  // Specify the URL
+      // Perform the GET request
+      int httpCode = https.GET();
+      MyLog::info("%s",
+                  String("Get data from server with response code: ").c_str());
+      MyLog::info("%s", String(httpCode).c_str());
+      vTaskDelay(pdMS_TO_TICKS(1000));  // TODO: slow down the server polling
+      if (httpCode > 0) {
+        // Check if the GET request was successful
+        if (httpCode == HTTP_CODE_OK) {
+          String payload = https.getString();
+
+          // Parse the JSON response
+          DynamicJsonDocument doc(49152);
+          DeserializationError error = deserializeJson(doc, payload);
+
+          if (error) {
+            https.end();  // Close connection
+            MyLog::info("%s", String("deserializeJson() failed: ").c_str());
+            MyLog::info("%s", String(error.c_str()).c_str());
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+          }
+
+          for (int i = 0; i < 5; i++) {
+            ref[i] = float(doc[i]["pm02"]);
+            Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
+            pmValues[i] = doc[i]["pm02"];
+          }
+          Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
+          pmValues[5] = doc[12]["pm02"];
+
+          meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
+
+          MyLog::info("%s", String("Mean pm02: ").c_str());
+          MyLog::info("%s", String(meanpm02).c_str());
         }
-        // MyLog::info("%s", String("Send read request...").c_str());
-        local_pms.requestRead();
-        localPmsDataValid = local_pms.readUntil(localPmsData);
-        printLocalPM(localPmsDataValid, localPmsData);
-      }
-
-      if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
-        fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
-        duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
-                                                       fanSpeedPercent);
-
-        fanIsOn = true;
-        intervalTs = now;
-        durationTs = millis();
-        uint16_t pwm_bit = Calculator::scaleDutyCycle(fanSpeedPercent);
-
-        pwm_bit = pwm_bit << 7;
-        byte pwm0 = pwm_bit >> 8;
-        byte pwm1 = pwm_bit;
-        set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
-        set_I2C_register(MAX31790, 0x41, pwm1);
       } else {
-        fanIsOn = false;
-        set_I2C_register(MAX31790, 0x40, 0);
-        set_I2C_register(MAX31790, 0x41, 0);
+        https.end();  // Close connection
+        Serial.printf("GET request failed, error: %s\n",
+                      https.errorToString(httpCode).c_str());
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        continue;
       }
-
-      // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 20) {
-        fanIsOn = false;
-        // MyLog::info("%s", String("Force turn Off fan").c_str());
-        set_I2C_register(MAX31790, 0x40, 0);
-        set_I2C_register(MAX31790, 0x41, 0);
-      } else if (localPmsDataValid &&
-                 localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 20 &&
-                 fanIsOn == true) {
-      }
+      https.end();  // Close connection
     }
-    vTaskDelay(xDelay100m);
+    vTaskDelay(pdMS_TO_TICKS(1000));  // Delay before the next request
   }
 }
