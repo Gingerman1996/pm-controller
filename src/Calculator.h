@@ -2,6 +2,11 @@
 #ifndef CALCULATOR_H
 #define CALCULATOR_H
 
+#include <array>
+#include <cmath>
+#include <iostream>
+#include <numeric>
+
 class Calculator {
 #define MAX_DUTY_CYCLE_SCALE 511  // range is 0-511
  public:
@@ -10,6 +15,10 @@ class Calculator {
                                        uint16_t fanSpeedInPercent);
   static uint16_t getFanRunSpeed(float current, uint16_t target);
   static uint16_t scaleDutyCycle(const uint16_t dutyCycle);
+  static float determineFanRPMToAchieveTarget(double averagePMInRoom,
+                                              double targetPM,
+                                              double inletPMConcentration);
+  static float convertRPMToPercentage(double rpm);
 
  private:
   constexpr static double ROOM_VALUE_M3 = 48;
@@ -23,6 +32,11 @@ class Calculator {
 
   // Static function for calculating PID
   static float calculatePID(float current, uint16_t target);
+  static float determineTargetPM25FlowRate(double averagePMInRoom,
+                                           double targetPM, double roomVolume,
+                                           double roomAirLeak);
+  static float controlFanRPM(double targetPM25FlowRate,
+                             double inletPMConcentration);
 };
 
 #endif

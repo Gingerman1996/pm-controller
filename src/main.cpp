@@ -236,6 +236,7 @@ void Fan_controller(void *parameter) {
       MyLog::info("pm2.5_target=%u", TARGET_PM02);
       MyLog::info("Fan is running: \t\t\t%s", fanIsOn ? "true" : "false");
       MyLog::info("Fan speed is: %u %%", fanSpeedPercent);
+      MyLog::info("Fan speed in RPM: %u", tach_out);
     }
     unsigned long now = millis();
     bool localPmsDataValid = false;
@@ -253,9 +254,14 @@ void Fan_controller(void *parameter) {
       }
 
       if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
-        fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
-        duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
-                                                       fanSpeedPercent);
+        // fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
+        // duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
+        //                                                fanSpeedPercent);
+
+        double requiredRPM = Calculator::determineFanRPMToAchieveTarget(
+            meanpm02, TARGET_PM02, localPmsData.PM_AE_UG_2_5);
+        
+        fanSpeedPercent = Calculator::convertRPMToPercentage(requiredRPM);
 
         fanIsOn = true;
         intervalTs = now;
@@ -331,6 +337,7 @@ void Data_acquisition(void *parameter) {
 }
 
 void Http_request(void *parameter) {
+  numSensors = 6;
   while (true) {
     if (WiFi.status() == WL_CONNECTED) {
       HTTPClient https;
@@ -338,7 +345,8 @@ void Http_request(void *parameter) {
       // Perform the GET request
       int httpCode = https.GET();
       MyLog::info("%s%s",
-                  String("Get data from server with response code: ").c_str(), String(httpCode).c_str());
+                  String("Get data from server with response code: ").c_str(),
+                  String(httpCode).c_str());
       delay(1000);  // TODO: slow down the server polling
       if (httpCode > 0) {
         // Check if the GET request was successful
