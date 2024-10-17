@@ -5,6 +5,7 @@
 #include <esp_now.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include "MyLog.h"
 
 struct ESPNow_message {
     uint64_t id;

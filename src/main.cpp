@@ -9,7 +9,7 @@
 
 #include "MyLog.h"
 
-#define USE_ESP_NOW
+// #define USE_ESP_NOW
 
 #include "Calculator.h"
 #include "ESPNowMaster.h"
@@ -177,7 +177,7 @@ void setup() {
   timeClient.begin();
   timeClient.update();
 
-  xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 2048, NULL, 1,
+  xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL, 1,
                           &Fan_controller_Handle, 1);
 
 #ifdef USE_ESP_NOW
@@ -187,7 +187,7 @@ void setup() {
 
 #ifndef USE_ESP_NOW
   xTaskCreatePinnedToCore(Http_request, "Http_request_task", 4096, NULL, 1,
-                          &Http_request_Handle, 1);
+                          &Http_request_Handle, 0);
 #endif
 }
 
@@ -206,9 +206,9 @@ void loop() {
 void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
   if (localPmsDataValid) {
     MyLog::info("PMS data is valid.");
-    MyLog::info("Local PM 1.0 (ug/m3): %.2f", localPmsData.PM_AE_UG_1_0);
-    MyLog::info("Local PM 2.5 (ug/m3): %.2f", localPmsData.PM_AE_UG_2_5);
-    MyLog::info("Local PM 10.0 (ug/m3): %.2f", localPmsData.PM_AE_UG_10_0);
+    MyLog::info("Local PM 1.0 (ug/m3): %d", localPmsData.PM_AE_UG_1_0);
+    MyLog::info("Local PM 2.5 (ug/m3): %d", localPmsData.PM_AE_UG_2_5);
+    MyLog::info("Local PM 10.0 (ug/m3): %d", localPmsData.PM_AE_UG_10_0);
   }
 }
 
@@ -234,59 +234,56 @@ void Fan_controller(void *parameter) {
       digitalWrite(Trig1, HIGH);
       MyLog::info("Average PM2.5: %.2f", meanpm02);
       MyLog::info("pm2.5_target=%u", TARGET_PM02);
-      MyLog::info("Fan is running: %s", fanIsOn ? "true" : "false");
+      MyLog::info("Fan is running: \t\t\t%s", fanIsOn ? "true" : "false");
       MyLog::info("Fan speed is: %u %%", fanSpeedPercent);
     }
     unsigned long now = millis();
     bool localPmsDataValid = false;
 
-    while (true) {
-      if (WiFi.status() == WL_CONNECTED) {
-        PMS::DATA localPmsData;
-        if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
-          pmsReadTs = millis();
-          while (Serial1.available()) {
-            Serial1.read();
-          }
-          local_pms.requestRead();
-          localPmsDataValid = local_pms.readUntil(localPmsData);
-          printLocalPM(localPmsDataValid, localPmsData);
+    if (WiFi.status() == WL_CONNECTED) {
+      PMS::DATA localPmsData;
+      if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
+        pmsReadTs = millis();
+        while (Serial1.available()) {
+          Serial1.read();
         }
-
-        if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
-          fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
-          duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
-                                                         fanSpeedPercent);
-
-          fanIsOn = true;
-          intervalTs = now;
-          durationTs = millis();
-          uint16_t pwm_bit = Calculator::scaleDutyCycle(fanSpeedPercent);
-
-          pwm_bit = pwm_bit << 7;
-          byte pwm0 = pwm_bit >> 8;
-          byte pwm1 = pwm_bit;
-          set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
-          set_I2C_register(MAX31790, 0x41, pwm1);
-        } else {
-          fanIsOn = false;
-          set_I2C_register(MAX31790, 0x40, 0);
-          set_I2C_register(MAX31790, 0x41, 0);
-        }
-
-        // if close sensor find reach the target will stop the fan
-        if (localPmsDataValid &&
-            localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 20) {
-          fanIsOn = false;
-          set_I2C_register(MAX31790, 0x40, 0);
-          set_I2C_register(MAX31790, 0x41, 0);
-        } else if (localPmsDataValid &&
-                   localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 20 &&
-                   fanIsOn == true) {
-        }
+        local_pms.requestRead();
+        localPmsDataValid = local_pms.readUntil(localPmsData);
+        printLocalPM(localPmsDataValid, localPmsData);
       }
-      vTaskDelay(xDelay100m);
+
+      if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
+        fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
+        duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
+                                                       fanSpeedPercent);
+
+        fanIsOn = true;
+        intervalTs = now;
+        durationTs = millis();
+        uint16_t pwm_bit = Calculator::scaleDutyCycle(fanSpeedPercent);
+
+        pwm_bit = pwm_bit << 7;
+        byte pwm0 = pwm_bit >> 8;
+        byte pwm1 = pwm_bit;
+        set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
+        set_I2C_register(MAX31790, 0x41, pwm1);
+      } else {
+        fanIsOn = false;
+        set_I2C_register(MAX31790, 0x40, 0);
+        set_I2C_register(MAX31790, 0x41, 0);
+      }
+
+      // if close sensor find reach the target will stop the fan
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 8.5) {
+        fanIsOn = false;
+        set_I2C_register(MAX31790, 0x40, 0);
+        set_I2C_register(MAX31790, 0x41, 0);
+      } else if (localPmsDataValid &&
+                 localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 8.5 &&
+                 fanIsOn == true) {
+      }
     }
+    vTaskDelay(xDelay100m);
   }
 }
 
@@ -340,10 +337,9 @@ void Http_request(void *parameter) {
       https.begin(apiUrl);  // Specify the URL
       // Perform the GET request
       int httpCode = https.GET();
-      MyLog::info("%s",
-                  String("Get data from server with response code: ").c_str());
-      MyLog::info("%s", String(httpCode).c_str());
-      vTaskDelay(pdMS_TO_TICKS(1000));  // TODO: slow down the server polling
+      MyLog::info("%s%s",
+                  String("Get data from server with response code: ").c_str(), String(httpCode).c_str());
+      delay(1000);  // TODO: slow down the server polling
       if (httpCode > 0) {
         // Check if the GET request was successful
         if (httpCode == HTTP_CODE_OK) {

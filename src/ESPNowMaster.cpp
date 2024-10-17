@@ -16,10 +16,11 @@ void ESPNowMaster::begin() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(_ssid, _password);
 
+    MyLog::debug("Connectint to WiFi");
     // Wait for connection
     while (WiFi.status() != WL_CONNECTED) {
         delay(1000);
-        Serial.println("Connecting to WiFi...");
+        Serial.print(".");
     }
     Serial.println("Connected to WiFi");
 
