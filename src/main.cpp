@@ -3,6 +3,7 @@
 #include <NTPClient.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include "MyLog.h"
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <esp_now.h>
@@ -152,7 +153,7 @@ void setup() {
   // Pin for monitoring loop
   pinMode(Trig1, OUTPUT);
   digitalWrite(Trig1, LOW);
-  Serial.println("Setup Done");
+  MyLog::info("%s", String("Setup Done").c_str());
 
   espNowMaster.begin();
 
@@ -161,7 +162,7 @@ void setup() {
 
   // Init ESP-NOW
   if (esp_now_init() != ESP_OK) {
-    Serial.println("Error initializing ESP-NOW");
+    MyLog::info("%s", String("Error initializing ESP-NOW").c_str());
     return;
   }
 
@@ -196,8 +197,8 @@ void loop() {
     // https.begin(apiUrl);  // Specify the URL
     // // Perform the GET request
     // int httpCode = https.GET();
-    // Serial.print("Get data from server with response code: ");
-    // Serial.println(httpCode);
+    // MyLog::info("%s", String("Get data from server with response code: ").c_str());
+    // MyLog::info("%s", String(httpCode).c_str());
     // delay(1000);  // TODO: slow donw the sever polling
     // if (httpCode > 0) {
     //   // Check if the GET request was successful
@@ -209,12 +210,12 @@ void loop() {
     //     DeserializationError error = deserializeJson(doc, payload);
 
     //     // serializeJsonPretty(doc[12], Serial);
-    //     // Serial.println();
+    //     // MyLog::info("%s", String().c_str());
 
     //     if (error) {
     //       https.end();  // Close connection
-    //       Serial.print("deserializeJson() failed: ");
-    //       Serial.println(error.c_str());
+    //       MyLog::info("%s", String("deserializeJson() failed: ").c_str());
+    //       MyLog::info("%s", String(error.c_str()).c_str());
     //       delay(10000);
     //       return;
     //     }
@@ -229,8 +230,8 @@ void loop() {
 
     //     meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
 
-    //     Serial.print("Mean pm02: ");
-    //     Serial.println(meanpm02);
+    //     MyLog::info("%s", String("Mean pm02: ").c_str());
+    //     MyLog::info("%s", String(meanpm02).c_str());
     //     // setFanSpeed(10, float(doc[0]["pm02"]));
     //   }
     // } else {
@@ -254,13 +255,12 @@ void loop() {
                 1.0;  // Set weight to 1.0 for equal weighting, can be changed
             numSensors++;
           }
-
-          // Serial.printf("Board ID: %llX\n", boardId);
-          // Serial.printf("PM2.5: %.2f\n", pm25);
-          // Serial.printf("Temperature: %.2f\n", temp);
-          // Serial.printf("Humidity: %.2f\n", humi);
-          // Serial.printf("Last Updated: %lu\n", timestamp);
-          // Serial.println();
+          Serial.printf("Board ID: %llX\n", boardId);
+          Serial.printf("PM2.5: %.2f\n", pm25);
+          Serial.printf("Temperature: %.2f\n", temp);
+          Serial.printf("Humidity: %.2f\n", humi);
+          Serial.printf("Last Updated: %lu\n", timestamp);
+          MyLog::info("%s", String().c_str());
         }
       }
     }
@@ -273,7 +273,7 @@ void loop() {
         Serial.printf("Weighted Average PM2.5: %.2f\n", meanpm02);
       }
     } else {
-      Serial.println("No data available to calculate weighted average.");
+      MyLog::info("%s", String("No data available to calculate weighted average.").c_str());
     }
 
     // Check for timeout of boards every 30 seconds
@@ -297,41 +297,41 @@ void loop() {
     if (millis() > pre2 + 2000) {
       pre2 = millis();
       digitalWrite(Trig1, HIGH);
-      Serial.println();
+      MyLog::info("%s", String().c_str());
 
       // Print log
-      Serial.print("Average PM2.5: ");
-      Serial.println(meanpm02);
+      MyLog::info("%s", String("Average PM2.5: ").c_str());
+      MyLog::info("%s", String(meanpm02).c_str());
 
-      Serial.print(" pm2.5_target=");
-      // Serial.print(loop_cnt,DEC);
-      Serial.print("  ");
-      Serial.print(TARGET_PM02);
-      Serial.print("  ");
+      MyLog::info("%s", String(" pm2.5_target=").c_str());
+      // MyLog::info("%s", String(loop_cnt,DEC).c_str());
+      MyLog::info("%s", String("  ").c_str());
+      MyLog::info("%s", String(TARGET_PM02).c_str());
+      MyLog::info("%s", String("  ").c_str());
 
-      Serial.print("Fan is running: ");
-      Serial.println(fanIsOn);
+      MyLog::info("%s", String("Fan is running: ").c_str());
+      MyLog::info("%s", String(fanIsOn).c_str());
 
-      Serial.print("Fan speed is: ");
-      Serial.print(fanSpeedPercent);
-      Serial.println(" %");
+      MyLog::info("%s", String("Fan speed is: ").c_str());
+      MyLog::info("%s", String(fanSpeedPercent).c_str());
+      MyLog::info("%s", String(" %").c_str());
     }
   }
 }
 
 void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
   if (localPmsDataValid) {
-    Serial.println("PMS data is valid.");
-    Serial.print("Local PM 1.0 (ug/m3): ");
-    Serial.println(localPmsData.PM_AE_UG_1_0);
+    MyLog::info("%s", String("PMS data is valid.").c_str());
+    MyLog::info("%s", String("Local PM 1.0 (ug/m3): ").c_str());
+    MyLog::info("%s", String(localPmsData.PM_AE_UG_1_0).c_str());
 
-    Serial.print("Local PM 2.5 (ug/m3): ");
-    Serial.println(localPmsData.PM_AE_UG_2_5);
+    MyLog::info("%s", String("Local PM 2.5 (ug/m3): ").c_str());
+    MyLog::info("%s", String(localPmsData.PM_AE_UG_2_5).c_str());
 
-    Serial.print("Local PM 10.0 (ug/m3): ");
-    Serial.println(localPmsData.PM_AE_UG_10_0);
+    MyLog::info("%s", String("Local PM 10.0 (ug/m3): ").c_str());
+    MyLog::info("%s", String(localPmsData.PM_AE_UG_10_0).c_str());
 
-    Serial.println();
+    MyLog::info("%s", String().c_str());
   }
 }
 
@@ -347,7 +347,7 @@ void Fan_controller(void *parameter) {
         while (Serial1.available()) {
           Serial1.read();
         }
-        // Serial.println("Send read request...");
+        // MyLog::info("%s", String("Send read request...").c_str());
         local_pms.requestRead();
         localPmsDataValid = local_pms.readUntil(localPmsData);
         printLocalPM(localPmsDataValid, localPmsData);
@@ -377,7 +377,7 @@ void Fan_controller(void *parameter) {
       // if close sensor find reach the target will stop the fan
       if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 20) {
         fanIsOn = false;
-        // Serial.println("Force turn Off fan");
+        // MyLog::info("%s", String("Force turn Off fan").c_str());
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
       } else if (localPmsDataValid &&
