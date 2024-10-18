@@ -73,8 +73,8 @@ float ref[12];
 uint64_t boardId;
 float pm25, temp, humi;
 unsigned long timestamp;
-float pmValues[128] = {0};
-float weights[128] = {1.0};
+float pmValues[6] = {0};
+float weights[6] = {1, 1, 1, 1, 1, 1};
 int numSensors = 0;
 
 // PMS sensor

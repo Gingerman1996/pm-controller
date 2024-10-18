@@ -67,7 +67,7 @@ float Calculator::calculatePID(float current, uint16_t target) {
 
   // Limit the integral term to prevent it from growing too large (Anti-windup)
   float integralMax = 25.0f;  // Adjust this value as necessary based on your system
-  float integralMin = -25.0f;
+  float integralMin = -12.0f;
   if (integral > integralMax) integral = integralMax;
   if (integral < integralMin) integral = integralMin;
 
