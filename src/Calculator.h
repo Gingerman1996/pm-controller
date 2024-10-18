@@ -18,7 +18,7 @@ class Calculator {
   static float determineFanRPMToAchieveTarget(double averagePMInRoom,
                                               double targetPM,
                                               double inletPMConcentration);
-  static float convertRPMToPercentage(double rpm);
+  static int convertRPMToPercentage(double rpm);
 
  private:
   constexpr static double ROOM_VALUE_M3 = 48;

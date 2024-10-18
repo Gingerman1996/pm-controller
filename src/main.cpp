@@ -91,7 +91,7 @@ byte data, data0, data1;
       // concentration
 #define PMS_READ_INTERVAL_SECONDS 1
 const unsigned int TARGET_PM02 =
-    20;  // target pm2.5 concentration in micrograms per cubic meter
+    40;  // target pm2.5 concentration in micrograms per cubic meter
 
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
@@ -213,6 +213,11 @@ void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
 }
 
 void Fan_controller(void *parameter) {
+  bool localPmsDataValid = false;
+
+  uint16_t oldLocalPM25;
+  uint16_t newLocalPM25;
+
   while (true) {
     // Setting interval length based on time
     interval_s = millis() - bootTime > INIT_INTERVAL_SECONDS * 1000
@@ -228,40 +233,40 @@ void Fan_controller(void *parameter) {
     // convert to RPM
     int tach1 = 60 * _SR * 8192 / (NP * tach_out);
 
+    PMS::DATA localPmsData;
+    if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
+      pmsReadTs = millis();
+      while (Serial1.available()) {
+        Serial1.read();
+      }
+      local_pms.requestRead();
+      localPmsDataValid = local_pms.readUntil(localPmsData);
+      printLocalPM(localPmsDataValid, localPmsData);
+    }
+
     //////////////////////////////////////////////////// print
     if (millis() > pre2 + 2000) {
       pre2 = millis();
       digitalWrite(Trig1, HIGH);
       MyLog::info("Average PM2.5: %.2f", meanpm02);
-      MyLog::info("pm2.5_target=%u", TARGET_PM02);
+      MyLog::info("pm2.5_target = %u", TARGET_PM02);
       MyLog::info("Fan is running: \t\t\t%s", fanIsOn ? "true" : "false");
-      MyLog::info("Fan speed is: %u %%", fanSpeedPercent);
-      MyLog::info("Fan speed in RPM: %u", tach_out);
+      MyLog::info("LocalPmsDataValid is: %s",
+                  localPmsDataValid ? "true" : "false");
+      MyLog::info("Fan speed is: %d", fanSpeedPercent);
     }
     unsigned long now = millis();
-    bool localPmsDataValid = false;
 
     if (WiFi.status() == WL_CONNECTED) {
-      PMS::DATA localPmsData;
-      if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
-        pmsReadTs = millis();
-        while (Serial1.available()) {
-          Serial1.read();
-        }
-        local_pms.requestRead();
-        localPmsDataValid = local_pms.readUntil(localPmsData);
-        printLocalPM(localPmsDataValid, localPmsData);
-      }
-
       if (meanpm02 < TARGET_PM02 && localPmsDataValid) {
-        // fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
-        // duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
-        //                                                fanSpeedPercent);
+        fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
+        duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
+                                                       fanSpeedPercent);
 
-        double requiredRPM = Calculator::determineFanRPMToAchieveTarget(
-            meanpm02, TARGET_PM02, localPmsData.PM_AE_UG_2_5);
-        
-        fanSpeedPercent = Calculator::convertRPMToPercentage(requiredRPM);
+        // double requiredRPM = Calculator::determineFanRPMToAchieveTarget(
+        //     meanpm02, TARGET_PM02, localPmsData.PM_AE_UG_2_5);
+
+        // fanSpeedPercent = Calculator::convertRPMToPercentage(requiredRPM);
 
         fanIsOn = true;
         intervalTs = now;
@@ -278,16 +283,27 @@ void Fan_controller(void *parameter) {
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
       }
-
+      newLocalPM25 = localPmsData.PM_AE_UG_2_5;
       // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= TARGET_PM02 * 8.5) {
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 300 &&
+          oldLocalPM25 < newLocalPM25) {
         fanIsOn = false;
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
-      } else if (localPmsDataValid &&
-                 localPmsData.PM_AE_UG_2_5 < TARGET_PM02 * 8.5 &&
-                 fanIsOn == true) {
-      }
+        oldLocalPM25 = newLocalPM25;
+      } 
+      // else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 <= 500 &&
+      //            oldLocalPM25 > newLocalPM25 && meanpm02 < TARGET_PM02) {
+      //   fanIsOn = true;
+      //   uint16_t pwm_bit = Calculator::scaleDutyCycle(fanSpeedPercent);
+
+      //   pwm_bit = pwm_bit << 7;
+      //   byte pwm0 = pwm_bit >> 8;
+      //   byte pwm1 = pwm_bit;
+      //   set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
+      //   set_I2C_register(MAX31790, 0x41, pwm1);
+      //   oldLocalPM25 = newLocalPM25;
+      // }
     }
     vTaskDelay(xDelay100m);
   }
@@ -390,3 +406,5 @@ void Http_request(void *parameter) {
     vTaskDelay(pdMS_TO_TICKS(1000));  // Delay before the next request
   }
 }
+
+void localPMControl(int *localPM) {}

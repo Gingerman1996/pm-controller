@@ -91,8 +91,8 @@ float Calculator::calculatePID(float current, uint16_t target) {
   previous_error = current_error;
 
   // Set the fan speed limits between 20% (minimum) and 100% (maximum)
-  float maxFanSpeed = 100.0f;
-  float minFanSpeed = 18.0f;
+  float maxFanSpeed = 70.0f;
+  float minFanSpeed = 20.0f;
 
   // Normalize the PID output to a range between 0 and 1
   // This assumes that the maximum error is equal to the target value
@@ -183,12 +183,23 @@ float Calculator::determineFanRPMToAchieveTarget(double averagePMInRoom,
   if (targetPM25FlowRate > 0.0) {
     requiredRPM = controlFanRPM(targetPM25FlowRate, inletPMConcentration);
   }
-  return requiredRPM;
+
+  if (requiredRPM > 3000) {
+    return 3000;
+  } else {
+    return requiredRPM;
+  }
 }
 
 // Function to calculate the average PM2.5 concentration in the room from
 // multiple sensors
-float Calculator::convertRPMToPercentage(double rpm) {
+int Calculator::convertRPMToPercentage(double rpm) {
   constexpr double maxRPM = 3000.0;  // Maximum RPM of the fan
-  return (rpm / maxRPM) * 100.0;
+  int percent = (rpm / maxRPM) * 100.0;
+  if(percent > 60){
+    return 60;
+  }
+  else {
+    return percent;
+  }
 }
