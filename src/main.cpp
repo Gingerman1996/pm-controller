@@ -63,6 +63,7 @@ unsigned long printTimestamp =
     0;  // timestamp for controlling print interval (3 seconds)
 unsigned int fanSpeedPercent = 0;
 float duration = 0;
+int InletConcentration = 0;
 float interval_s = 0;
 bool fanIsOn = false;
 float meanpm02 = 0;
@@ -214,10 +215,6 @@ void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
 
 void Fan_controller(void *parameter) {
   bool localPmsDataValid = false;
-
-  uint16_t oldLocalPM25;
-  uint16_t newLocalPM25;
-
   while (true) {
     // Setting interval length based on time
     interval_s = millis() - bootTime > INIT_INTERVAL_SECONDS * 1000
@@ -253,7 +250,8 @@ void Fan_controller(void *parameter) {
       MyLog::info("Fan is running: \t\t\t%s", fanIsOn ? "true" : "false");
       MyLog::info("LocalPmsDataValid is: %s",
                   localPmsDataValid ? "true" : "false");
-      MyLog::info("Fan speed is: %d", fanSpeedPercent);
+      MyLog::info("Fan speed is: %d %", fanSpeedPercent);
+      MyLog::info("Fan speed: %d RPM", tach1);
     }
     unsigned long now = millis();
 
@@ -263,10 +261,13 @@ void Fan_controller(void *parameter) {
         duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
                                                        fanSpeedPercent);
 
+        InletConcentration =
+            Calculator::calculateInletConcentration(TARGET_PM02, tach1);
+
         // double requiredRPM = Calculator::determineFanRPMToAchieveTarget(
         //     meanpm02, TARGET_PM02, localPmsData.PM_AE_UG_2_5);
-
-        // fanSpeedPercent = Calculator::convertRPMToPercentage(requiredRPM);
+        // fanSpeedPercent =
+        // Calculator::convertRPMToPercentage(requiredRPM);
 
         fanIsOn = true;
         intervalTs = now;
@@ -283,27 +284,12 @@ void Fan_controller(void *parameter) {
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
       }
-      newLocalPM25 = localPmsData.PM_AE_UG_2_5;
       // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 300 &&
-          oldLocalPM25 < newLocalPM25) {
+      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 100) {
         fanIsOn = false;
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
-        oldLocalPM25 = newLocalPM25;
-      } 
-      // else if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 <= 500 &&
-      //            oldLocalPM25 > newLocalPM25 && meanpm02 < TARGET_PM02) {
-      //   fanIsOn = true;
-      //   uint16_t pwm_bit = Calculator::scaleDutyCycle(fanSpeedPercent);
-
-      //   pwm_bit = pwm_bit << 7;
-      //   byte pwm0 = pwm_bit >> 8;
-      //   byte pwm1 = pwm_bit;
-      //   set_I2C_register(MAX31790, 0x40, pwm0);  // Channel 1 --> Fan
-      //   set_I2C_register(MAX31790, 0x41, pwm1);
-      //   oldLocalPM25 = newLocalPM25;
-      // }
+      }
     }
     vTaskDelay(xDelay100m);
   }

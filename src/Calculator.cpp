@@ -196,10 +196,42 @@ float Calculator::determineFanRPMToAchieveTarget(double averagePMInRoom,
 int Calculator::convertRPMToPercentage(double rpm) {
   constexpr double maxRPM = 3000.0;  // Maximum RPM of the fan
   int percent = (rpm / maxRPM) * 100.0;
-  if(percent > 60){
+  if (percent > 60) {
     return 60;
-  }
-  else {
+  } else {
     return percent;
   }
+}
+
+float Calculator::calculateAirFlowRate(int rpm) {
+  // Step 1: Calculate the cross-sectional area of the duct (A = π * (D/2)^2)
+  double area = M_PI * std::pow(ductDiameter / 2.0, 2);
+
+  // Step 2: Calculate air velocity (V = k * RPM)
+  double velocity = k * rpm;  // Velocity in meters per minute
+
+  // Step 3: Calculate air flow rate (Q_air = A * V)
+  double airFlowRate = area * velocity;  // Air flow rate in m3/min
+
+  return airFlowRate;  // Return the calculated air flow rate in m3/min
+}
+
+int Calculator::calculateInletConcentration(int targetConcentration,
+                                            int rpm) {
+  // Step 1: Convert room air leak rate from m3/h to m3/min
+  double roomAirLeakRateMin = ROOM_AIR_LEAK_M3H / 60.0;
+
+  float airFlowRate = calculateAirFlowRate(rpm);
+
+  // Step 2: Calculate the required inlet concentration (C_inlet =
+  // (targetConcentration * roomAirLeakRate) / airFlowRate)
+  if (airFlowRate <= 0) {
+    Serial.println("Error: Air flow rate must be greater than zero.");
+    return -1;  // Return an error value if air flow rate is invalid
+  }
+  double inletConcentration =
+      (targetConcentration * roomAirLeakRateMin) / airFlowRate;
+
+  return inletConcentration;  // Return the calculated inlet concentration in
+                              // µg/m³
 }

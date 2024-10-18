@@ -19,6 +19,8 @@ class Calculator {
                                               double targetPM,
                                               double inletPMConcentration);
   static int convertRPMToPercentage(double rpm);
+  static int calculateInletConcentration(int targetConcentration,
+                                         int rpm);
 
  private:
   constexpr static double ROOM_VALUE_M3 = 48;
@@ -29,6 +31,10 @@ class Calculator {
   // Static PID Variables
   static float current_error, previous_error, integral, derivative;
   static float Kp, Ki, Kd;
+  constexpr static double ductDiameter =
+      0.1016;  // Diameter of duct in meters (4 inches)
+  constexpr static double k =
+      0.2516;  // Calculated k value based on the fan specs
 
   // Static function for calculating PID
   static float calculatePID(float current, uint16_t target);
@@ -37,6 +43,7 @@ class Calculator {
                                            double roomAirLeak);
   static float controlFanRPM(double targetPM25FlowRate,
                              double inletPMConcentration);
+  static float calculateAirFlowRate(int rpm);
 };
 
 #endif
