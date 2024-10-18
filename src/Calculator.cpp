@@ -7,8 +7,8 @@ float Calculator::current_error = 0;
 float Calculator::previous_error = 0;
 float Calculator::integral = 0;
 float Calculator::derivative = 0;
-float Calculator::Kp = 1.0;   // Proportional gain
-float Calculator::Ki = 0.1;   // Integral gain
+float Calculator::Kp = 0.7;   // Proportional gain
+float Calculator::Ki = 0.05;   // Integral gain
 float Calculator::Kd = 0.01;  // Derivative gain
 
 float Calculator::getFanRunningInterval(float current, uint16_t target) {
@@ -53,12 +53,6 @@ uint16_t Calculator::scaleDutyCycle(const uint16_t dutyCycle) {
 // Function to calculate the PID output
 float Calculator::calculatePID(float current, uint16_t target) {
   // Calculate the error (difference between target and current value)
-  // Serial.print("Target PM: ");
-  // Serial.print(target);
-  // Serial.println("\u00b5g/m\u00b3");
-  // Serial.print("Current PM: ");
-  // Serial.print(current);
-  // Serial.println("\u00b5g/m\u00b3");
 
   // If the current dust level is greater than or equal to the target, set fan
   // speed to 0
