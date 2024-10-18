@@ -15,10 +15,6 @@ class Calculator {
                                        uint16_t fanSpeedInPercent);
   static uint16_t getFanRunSpeed(float current, uint16_t target);
   static uint16_t scaleDutyCycle(const uint16_t dutyCycle);
-  static float determineFanRPMToAchieveTarget(double averagePMInRoom,
-                                              double targetPM,
-                                              double inletPMConcentration);
-  static int convertRPMToPercentage(double rpm);
   static int calculateInletConcentration(int targetConcentration, int rpm);
   static int convertPercentageToRPM(int percent);
 
@@ -38,9 +34,6 @@ class Calculator {
 
   // Static function for calculating PID
   static float calculatePID(float current, uint16_t target);
-  static float determineTargetPM25FlowRate(double averagePMInRoom,
-                                           double targetPM, double roomVolume,
-                                           double roomAirLeak);
   static float controlFanRPM(double targetPM25FlowRate,
                              double inletPMConcentration);
   static float calculateAirFlowRate(int rpm);

@@ -91,7 +91,7 @@ float Calculator::calculatePID(float current, uint16_t target) {
   previous_error = current_error;
 
   // Set the fan speed limits between 20% (minimum) and 100% (maximum)
-  float maxFanSpeed = 100.0f;
+  float maxFanSpeed = 60.0f;
   float minFanSpeed = 30.0f;
 
   // Normalize the PID output to a range between 0 and 1
@@ -148,59 +148,6 @@ float Calculator::controlFanRPM(double targetPM25FlowRate,
   double requiredRPM = requiredVelocity / k;  // Required RPM for the fan
 
   return requiredRPM;
-}
-
-// Function to determine the PM2.5 flow rate needed to achieve target PM2.5 in
-// the room, considering room size and air leakage
-float Calculator::determineTargetPM25FlowRate(double averagePMInRoom,
-                                              double targetPM,
-                                              double roomVolume,
-                                              double roomAirLeak) {
-  if (averagePMInRoom < targetPM) {
-    double requiredIncrease =
-        targetPM -
-        averagePMInRoom;  // Amount of PM2.5 needed to reach target (µg/m3)
-    double requiredFlowRate =
-        (requiredIncrease * roomVolume) +
-        roomAirLeak;  // Calculate flow rate needed considering room volume and
-                      // air leakage
-    return requiredFlowRate;  // Required PM2.5 flow rate in µg/min
-  }
-  return 0.0;  // No additional PM2.5 needed if already at or above target
-}
-
-// Updated function to determine fan RPM based on target PM2.5 flow rate
-float Calculator::determineFanRPMToAchieveTarget(double averagePMInRoom,
-                                                 double targetPM,
-                                                 double inletPMConcentration) {
-  // Step 1: Determine the target PM2.5 flow rate needed to reach target PM2.5
-  // in the room
-  double targetPM25FlowRate = determineTargetPM25FlowRate(
-      averagePMInRoom, targetPM, ROOM_VALUE_M3, ROOM_AIR_LEAK_M3H / 60);
-
-  // Step 2: If target PM2.5 flow rate is needed, calculate the required fan RPM
-  double requiredRPM = 0.0;
-  if (targetPM25FlowRate > 0.0) {
-    requiredRPM = controlFanRPM(targetPM25FlowRate, inletPMConcentration);
-  }
-
-  if (requiredRPM > 3000) {
-    return 3000;
-  } else {
-    return requiredRPM;
-  }
-}
-
-// Function to calculate the average PM2.5 concentration in the room from
-// multiple sensors
-int Calculator::convertRPMToPercentage(double rpm) {
-  constexpr double maxRPM = 3000.0;  // Maximum RPM of the fan
-  int percent = (rpm / maxRPM) * 100.0;
-  if (percent > 60) {
-    return 60;
-  } else {
-    return percent;
-  }
 }
 
 int Calculator::convertPercentageToRPM(int percent) {
