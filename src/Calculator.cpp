@@ -55,10 +55,10 @@ float Calculator::calculatePID(float current, uint16_t target) {
   // Calculate the error (difference between target and current value)
   // Serial.print("Target PM: ");
   // Serial.print(target);
-  // Serial.println("μg/m³");
-  // Serial.print("Cruent PM: ");
+  // Serial.println("\u00b5g/m\u00b3");
+  // Serial.print("Current PM: ");
   // Serial.print(current);
-  // Serial.println("μg/m³");
+  // Serial.println("\u00b5g/m\u00b3");
 
   // If the current dust level is greater than or equal to the target, set fan
   // speed to 0
@@ -69,53 +69,46 @@ float Calculator::calculatePID(float current, uint16_t target) {
   current_error = target - current;
 
   // Accumulate the error over time (Integral) and apply windup prevention
-  // integral += current_error;
+  integral += current_error;
 
   // Limit the integral term to prevent it from growing too large (Anti-windup)
-  // float integralMax = 50.0f;   // Adjust this value as necessary based on
-  // your system float integralMin = -50.0f;  // Set a minimum value for
-  // integral if (integral > integralMax) integral = integralMax; if (integral <
-  // integralMin) integral = integralMin;
+  float integralMax = 50.0f;  // Adjust this value as necessary based on your system
+  float integralMin = -50.0f;
+  if (integral > integralMax) integral = integralMax;
+  if (integral < integralMin) integral = integralMin;
 
   // Calculate the rate of change of the error (Derivative)
   derivative = current_error - previous_error;
 
-  // Compute the PID output using the Proportional, Integral, and Derivative
-  // components float pidOutput = (Kp * current_error) + (Ki * integral) + (Kd *
-  // derivative);
-
-  // Compute the PD output using only Proportional and Derivative components
-  float pdOutput = (Kp * current_error) + (Kd * derivative);
+  // Compute the PID output using the Proportional, Integral, and Derivative components
+  float pidOutput = (Kp * current_error) + (Ki * integral) + (Kd * derivative);
 
   // Store the current error for the next calculation (for the next cycle)
   previous_error = current_error;
 
-  // Set the fan speed limits between 20% (minimum) and 100% (maximum)
+  // Set the fan speed limits between 30% (minimum) and 60% (maximum)
   float maxFanSpeed = 60.0f;
   float minFanSpeed = 30.0f;
 
   // Normalize the PID output to a range between 0 and 1
   // This assumes that the maximum error is equal to the target value
-  // float normalizedOutput = pidOutput / (Kp * target);
+  float normalizedOutput = pidOutput / (Kp * target);
+  if (normalizedOutput < 0.0f) normalizedOutput = 0.0f;
+  if (normalizedOutput > 1.0f) normalizedOutput = 1.0f;
 
-  // Normalize the PD output to a range between 0 and 1
-  float normalizedOutput = pdOutput / (Kp * target);
+  // Scale the normalized output to fit within the range from minFanSpeed to maxFanSpeed
+  float fanSpeed = minFanSpeed + (normalizedOutput * (maxFanSpeed - minFanSpeed));
 
-  // Scale the normalized output to fit within the range from minFanSpeed to
-  // maxFanSpeed
-  float fanSpeed =
-      minFanSpeed + (normalizedOutput * (maxFanSpeed - minFanSpeed));
-
-  // Ensure the fan speed is not lower than the minimum speed and not higher
-  // than the maximum speed
+  // Ensure the fan speed is not lower than the minimum speed and not higher than the maximum speed
   if (fanSpeed < minFanSpeed) fanSpeed = minFanSpeed;
   if (fanSpeed > maxFanSpeed) fanSpeed = maxFanSpeed;
 
   // Return the calculated fan speed
-  // Serial.print("fanSpeed from PID functuion: ");
+  // Serial.print("fanSpeed from PID function: ");
   // Serial.println(fanSpeed);
   return fanSpeed;
 }
+
 
 // Function to control fan RPM based on target PM2.5 flow rate
 float Calculator::controlFanRPM(double targetPM25FlowRate,
