@@ -203,6 +203,12 @@ int Calculator::convertRPMToPercentage(double rpm) {
   }
 }
 
+int Calculator::convertPercentageToRPM(int percent) {
+  constexpr double maxRPM = 3000.0;
+  int rpm = (percent / 100.0) * maxRPM;
+  return rpm;
+}
+
 float Calculator::calculateAirFlowRate(int rpm) {
   // Step 1: Calculate the cross-sectional area of the duct (A = π * (D/2)^2)
   double area = M_PI * std::pow(ductDiameter / 2.0, 2);
@@ -216,8 +222,7 @@ float Calculator::calculateAirFlowRate(int rpm) {
   return airFlowRate;  // Return the calculated air flow rate in m3/min
 }
 
-int Calculator::calculateInletConcentration(int targetConcentration,
-                                            int rpm) {
+int Calculator::calculateInletConcentration(int targetConcentration, int rpm) {
   // Step 1: Convert room air leak rate from m3/h to m3/min
   double roomAirLeakRateMin = ROOM_AIR_LEAK_M3H / 60.0;
 

@@ -19,8 +19,8 @@ class Calculator {
                                               double targetPM,
                                               double inletPMConcentration);
   static int convertRPMToPercentage(double rpm);
-  static int calculateInletConcentration(int targetConcentration,
-                                         int rpm);
+  static int calculateInletConcentration(int targetConcentration, int rpm);
+  static int convertPercentageToRPM(int percent);
 
  private:
   constexpr static double ROOM_VALUE_M3 = 48;

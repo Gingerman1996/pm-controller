@@ -241,17 +241,30 @@ void Fan_controller(void *parameter) {
       printLocalPM(localPmsDataValid, localPmsData);
     }
 
+    if (!fanIsOn) {
+      fanSpeedPercent = 1;
+      InletConcentration = Calculator::calculateInletConcentration(
+          TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
+    } else {
+      InletConcentration = Calculator::calculateInletConcentration(
+          TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
+    }
+
     //////////////////////////////////////////////////// print
     if (millis() > pre2 + 2000) {
       pre2 = millis();
       digitalWrite(Trig1, HIGH);
-      MyLog::info("Average PM2.5: %.2f", meanpm02);
-      MyLog::info("pm2.5_target = %u", TARGET_PM02);
+      Serial.println("/////////////////////////////////////////////////////");
+      MyLog::info("Average PM2.5: \t\t\t%.2f", meanpm02);
+      MyLog::info("pm2.5_target = \t\t\t%u", TARGET_PM02);
       MyLog::info("Fan is running: \t\t\t%s", fanIsOn ? "true" : "false");
-      MyLog::info("LocalPmsDataValid is: %s",
+      MyLog::info("LocalPmsDataValid is: \t\t%s",
                   localPmsDataValid ? "true" : "false");
-      MyLog::info("Fan speed is: %d %", fanSpeedPercent);
-      MyLog::info("Fan speed: %d RPM", tach1);
+      MyLog::info("Fan speed is: \t\t\t%d %", fanSpeedPercent);
+      MyLog::info("Fan speed: \t\t\t%d RPM",
+                  Calculator::convertPercentageToRPM(fanSpeedPercent));
+      MyLog::info("InletConcentration: \t\t%d ug/m3", InletConcentration);
+      Serial.println("/////////////////////////////////////////////////////");
     }
     unsigned long now = millis();
 
@@ -260,14 +273,6 @@ void Fan_controller(void *parameter) {
         fanSpeedPercent = Calculator::getFanRunSpeed(meanpm02, TARGET_PM02);
         duration = Calculator::getFanRunningIntervalV2(meanpm02, TARGET_PM02,
                                                        fanSpeedPercent);
-
-        InletConcentration =
-            Calculator::calculateInletConcentration(TARGET_PM02, tach1);
-
-        // double requiredRPM = Calculator::determineFanRPMToAchieveTarget(
-        //     meanpm02, TARGET_PM02, localPmsData.PM_AE_UG_2_5);
-        // fanSpeedPercent =
-        // Calculator::convertRPMToPercentage(requiredRPM);
 
         fanIsOn = true;
         intervalTs = now;
@@ -284,8 +289,10 @@ void Fan_controller(void *parameter) {
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
       }
+
       // if close sensor find reach the target will stop the fan
-      if (localPmsDataValid && localPmsData.PM_AE_UG_2_5 >= 100) {
+      if (localPmsDataValid &&
+          localPmsData.PM_AE_UG_2_5 >= InletConcentration) {
         fanIsOn = false;
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
