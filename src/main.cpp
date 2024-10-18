@@ -246,8 +246,8 @@ void Fan_controller(void *parameter) {
       InletConcentration = Calculator::calculateInletConcentration(
           TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
     } else {
-      InletConcentration = Calculator::calculateInletConcentration(
-          TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
+      // InletConcentration = Calculator::calculateInletConcentration(
+      //     TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
     }
 
     //////////////////////////////////////////////////// print
@@ -384,8 +384,7 @@ void Http_request(void *parameter) {
 
           meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
 
-          MyLog::info("%s", String("Mean pm02: ").c_str());
-          MyLog::info("%s", String(meanpm02).c_str());
+          MyLog::info("%s%s", String("Mean pm02: ").c_str(), String(meanpm02).c_str());
         }
       } else {
         https.end();  // Close connection
