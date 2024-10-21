@@ -7,9 +7,9 @@ float Calculator::current_error = 0;
 float Calculator::previous_error = 0;
 float Calculator::integral = 0;
 float Calculator::derivative = 0;
-float Calculator::Kp = 0.7;   // Proportional gain
-float Calculator::Ki = 0.05;   // Integral gain
-float Calculator::Kd = 0.01;  // Derivative gain
+float Calculator::Kp = 0.4;   // Proportional gain
+float Calculator::Ki = 0.01;   // Integral gain
+float Calculator::Kd = 0.1;  // Derivative gain
 
 float Calculator::getFanRunningInterval(float current, uint16_t target) {
   // Serial.println("Use Calculation V1");
@@ -66,8 +66,8 @@ float Calculator::calculatePID(float current, uint16_t target) {
   integral += current_error;
 
   // Limit the integral term to prevent it from growing too large (Anti-windup)
-  float integralMax = 25.0f;  // Adjust this value as necessary based on your system
-  float integralMin = -12.0f;
+  float integralMax = 20.0f;  // Adjust this value as necessary based on your system
+  float integralMin = -20.0f;
   if (integral > integralMax) integral = integralMax;
   if (integral < integralMin) integral = integralMin;
 
@@ -82,7 +82,7 @@ float Calculator::calculatePID(float current, uint16_t target) {
 
   // Set the fan speed limits between 30% (minimum) and 60% (maximum)
   float maxFanSpeed = 60.0f;
-  float minFanSpeed = 30.0f;
+  float minFanSpeed = 20.0f;
 
   // Normalize the PID output to a range between 0 and 1
   // This assumes that the maximum error is equal to the target value
