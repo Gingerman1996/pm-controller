@@ -73,8 +73,8 @@ float ref[12];
 uint64_t boardId;
 float pm25, temp, humi;
 unsigned long timestamp;
-float pmValues[6] = {0};
-float weights[6] = {1, 1, 1, 1, 1, 1};
+float pmValues[5] = {0};
+float weights[5] = {1, 1, 1, 1, 1};
 int numSensors = 0;
 
 // PMS sensor
@@ -346,7 +346,7 @@ void Data_acquisition(void *parameter) {
 }
 
 void Http_request(void *parameter) {
-  numSensors = 6;
+  numSensors = 5;
   while (true) {
     if (WiFi.status() == WL_CONNECTED) {
       HTTPClient https;
@@ -380,7 +380,7 @@ void Http_request(void *parameter) {
             pmValues[i] = doc[i]["pm02"];
           }
           Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
-          pmValues[5] = doc[12]["pm02"];
+          // pmValues[5] = doc[12]["pm02"];
 
           meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
 
