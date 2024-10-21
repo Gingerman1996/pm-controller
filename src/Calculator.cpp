@@ -7,9 +7,9 @@ float Calculator::current_error = 0;
 float Calculator::previous_error = 0;
 float Calculator::integral = 0;
 float Calculator::derivative = 0;
-float Calculator::Kp = 0.4;   // Proportional gain
+float Calculator::Kp = 0.3;   // Proportional gain
 float Calculator::Ki = 0.01;   // Integral gain
-float Calculator::Kd = 0.1;  // Derivative gain
+float Calculator::Kd = 0.2;  // Derivative gain
 
 float Calculator::getFanRunningInterval(float current, uint16_t target) {
   // Serial.println("Use Calculation V1");
