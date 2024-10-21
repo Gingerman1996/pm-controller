@@ -8,8 +8,8 @@ float Calculator::previous_error = 0;
 float Calculator::integral = 0;
 float Calculator::derivative = 0;
 float Calculator::Kp = 0.3;   // Proportional gain
-float Calculator::Ki = 0.01;   // Integral gain
-float Calculator::Kd = 0.2;  // Derivative gain
+float Calculator::Ki = 0.01;  // Integral gain
+float Calculator::Kd = 0.2;   // Derivative gain
 
 float Calculator::getFanRunningInterval(float current, uint16_t target) {
   // Serial.println("Use Calculation V1");
@@ -66,7 +66,8 @@ float Calculator::calculatePID(float current, uint16_t target) {
   integral += current_error;
 
   // Limit the integral term to prevent it from growing too large (Anti-windup)
-  float integralMax = 15.0f;  // Adjust this value as necessary based on your system
+  float integralMax =
+      15.0f;  // Adjust this value as necessary based on your system
   float integralMin = -15.0f;
   if (integral > integralMax) integral = integralMax;
   if (integral < integralMin) integral = integralMin;
@@ -74,7 +75,8 @@ float Calculator::calculatePID(float current, uint16_t target) {
   // Calculate the rate of change of the error (Derivative)
   derivative = current_error - previous_error;
 
-  // Compute the PID output using the Proportional, Integral, and Derivative components
+  // Compute the PID output using the Proportional, Integral, and Derivative
+  // components
   float pidOutput = (Kp * current_error) + (Ki * integral) + (Kd * derivative);
 
   // Store the current error for the next calculation (for the next cycle)
@@ -90,10 +92,13 @@ float Calculator::calculatePID(float current, uint16_t target) {
   if (normalizedOutput < 0.0f) normalizedOutput = 0.0f;
   if (normalizedOutput > 1.0f) normalizedOutput = 1.0f;
 
-  // Scale the normalized output to fit within the range from minFanSpeed to maxFanSpeed
-  float fanSpeed = minFanSpeed + (normalizedOutput * (maxFanSpeed - minFanSpeed));
+  // Scale the normalized output to fit within the range from minFanSpeed to
+  // maxFanSpeed
+  float fanSpeed =
+      minFanSpeed + (normalizedOutput * (maxFanSpeed - minFanSpeed));
 
-  // Ensure the fan speed is not lower than the minimum speed and not higher than the maximum speed
+  // Ensure the fan speed is not lower than the minimum speed and not higher
+  // than the maximum speed
   if (fanSpeed < minFanSpeed) fanSpeed = minFanSpeed;
   if (fanSpeed > maxFanSpeed) fanSpeed = maxFanSpeed;
 
@@ -102,7 +107,6 @@ float Calculator::calculatePID(float current, uint16_t target) {
   // Serial.println(fanSpeed);
   return fanSpeed;
 }
-
 
 // Function to control fan RPM based on target PM2.5 flow rate
 float Calculator::controlFanRPM(double targetPM25FlowRate,
@@ -158,18 +162,37 @@ float Calculator::calculateAirFlowRate(int rpm) {
 
 int Calculator::calculateInletConcentration(int targetConcentration, int rpm) {
   // Step 1: Convert room air leak rate from m3/h to m3/min
-  double roomAirLeakRateMin = ROOM_AIR_LEAK_M3H / 60.0;
+  double roomAirLeakRateMin =
+      ROOM_AIR_LEAK_M3H / 60.0;  // Convert from m³/h to m³/min
 
+  // Step 2: Calculate the airflow rate using the RPM value
+  if (rpm < 0) {
+    Serial.println("Error: RPM must be non-negative.");
+    return -1;  // Return an error value if rpm is invalid
+  }
   float airFlowRate = calculateAirFlowRate(rpm);
 
-  // Step 2: Calculate the required inlet concentration (C_inlet =
-  // (targetConcentration * roomAirLeakRate) / airFlowRate)
+  // Check if airflow rate is greater than zero to prevent division by zero
   if (airFlowRate <= 0) {
     Serial.println("Error: Air flow rate must be greater than zero.");
     return -1;  // Return an error value if air flow rate is invalid
   }
-  double inletConcentration =
-      (targetConcentration * roomAirLeakRateMin) / airFlowRate;
+
+  // Step 3: Calculate air exchange rate based on room volume
+  double airExchangeRate =
+      airFlowRate / ROOM_VALUE_M3;  // Number of air exchanges per minute
+
+  // Step 4: Calculate the required inlet concentration considering dilution
+  if (targetConcentration < 0) {
+    Serial.println("Error: Target concentration must be non-negative.");
+    return -1;  // Return an error value if target concentration is invalid
+  }
+
+  // Use room volume and air exchange rate to determine the dilution factor
+  double dilutionFactor =
+      1.0 + airExchangeRate;  // More exchange results in more dilution
+  double inletConcentration = (targetConcentration * roomAirLeakRateMin) /
+                              (airFlowRate * dilutionFactor);
 
   return inletConcentration;  // Return the calculated inlet concentration in
                               // µg/m³
