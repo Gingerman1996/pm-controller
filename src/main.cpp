@@ -92,7 +92,7 @@ byte data, data0, data1;
       // concentration
 #define PMS_READ_INTERVAL_SECONDS 1
 const unsigned int TARGET_PM02 =
-    40;  // target pm2.5 concentration in micrograms per cubic meter
+    20;  // target pm2.5 concentration in micrograms per cubic meter
 
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
@@ -245,6 +245,9 @@ void Fan_controller(void *parameter) {
       fanSpeedPercent = 1;
       InletConcentration = Calculator::calculateInletConcentration(
           TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
+      if (InletConcentration > 900) {
+        InletConcentration = 900;
+      }
     } else {
       // InletConcentration = Calculator::calculateInletConcentration(
       //     TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
@@ -384,7 +387,8 @@ void Http_request(void *parameter) {
 
           meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
 
-          MyLog::info("%s%s", String("Mean pm02: ").c_str(), String(meanpm02).c_str());
+          MyLog::info("%s%s", String("Mean pm02: ").c_str(),
+                      String(meanpm02).c_str());
         }
       } else {
         https.end();  // Close connection
