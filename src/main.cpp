@@ -435,7 +435,7 @@ void Http_postRoom(void *parameter) {
         HTTPClient http;
 
         String serverURL =
-            "http://hw.airgradient.com/sensors/94e6868d45b0/measures";
+            "http://hw.airgradient.com/sensors/ffffffffffff/measures";
         http.begin(serverURL);
         http.addHeader("Content-Type",
                        "application/json");  // Set header to JSON
@@ -444,7 +444,6 @@ void Http_postRoom(void *parameter) {
         StaticJsonDocument<200> jsonDoc;
         jsonDoc["wifi"] = WiFi.RSSI();
         jsonDoc["pm02"] = meanpm02;
-        jsonDoc["tacho"] = Calculator::convertPercentageToRPM(fanSpeedPercent);
 
         // Convert JSON document to a string
         String jsonData;
@@ -455,15 +454,15 @@ void Http_postRoom(void *parameter) {
 
         if (httpResponseCode > 0) {
           String response = http.getString();
-          Serial.println("HTTP Response code: " + String(httpResponseCode));
-          Serial.println("Response: " + response);
+          MyLog::debug("HTTP Response code: %s", String(httpResponseCode));
+          MyLog::debug("Response: %s", response);
         } else {
-          Serial.println("Error in sending POST request");
+          MyLog::error("Error in sending POST request");
         }
 
         http.end();  // Close HTTP connection
       } else {
-        Serial.println("WiFi Disconnected");
+        MyLog::debug("WiFi Disconnected");
       }
     }
 
@@ -473,6 +472,44 @@ void Http_postRoom(void *parameter) {
 
 void Http_postInlet(void *parameter) {
   while (true) {
+    if (WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      String serverURL =
+          "http://hw.airgradient.com/sensors/94e6868d45b0/measures";
+      http.begin(serverURL);
+      http.addHeader("Content-Type",
+                     "application/json");  // Set header to JSON
+      int tacho = Calculator::convertPercentageToRPM(fanSpeedPercent);
+
+      // Create JSON document
+      StaticJsonDocument<200> jsonDoc;
+      jsonDoc["wifi"] = WiFi.RSSI();
+      jsonDoc["pm02"] = localPmsData.PM_AE_UG_2_5;
+      jsonDoc["tacho"] = tacho;
+
+      // Convert JSON document to a string
+      String jsonData;
+      Serial.println("////////////////////////////////////////////////");
+      serializeJsonPretty(jsonDoc, Serial);
+      Serial.println("////////////////////////////////////////////////");
+      serializeJson(jsonDoc, jsonData);
+
+      // Send HTTP POST request
+      int httpResponseCode = http.POST(jsonData);
+
+      if (httpResponseCode > 0) {
+        String response = http.getString();
+        MyLog::debug("HTTP Response code: %s", String(httpResponseCode));
+        MyLog::debug("Response: %s", response);
+      } else {
+        MyLog::error("Error in sending POST request");
+      }
+
+      http.end();  // Close HTTP connection
+    } else {
+      MyLog::debug("WiFi Disconnected");
+    }
+
     vTaskDelay(xDelay1000m);
   }
 }
