@@ -435,7 +435,7 @@ void Http_postRoom(void *parameter) {
         HTTPClient http;
 
         String serverURL =
-            "http://hw.airgradient.com/sensors/778899001122/measures";
+            "http://hw.airgradient.com/sensors/94e6868d45b0/measures";
         http.begin(serverURL);
         http.addHeader("Content-Type",
                        "application/json");  // Set header to JSON
