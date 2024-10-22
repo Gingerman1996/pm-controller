@@ -24,11 +24,20 @@ int Trig1 = 2;
 TaskHandle_t Fan_controller_Handle = NULL;
 TaskHandle_t Data_acquisition_Handle = NULL;
 TaskHandle_t Http_request_Handle = NULL;
-const TickType_t xDelay100m = pdMS_TO_TICKS(100);
+TaskHandle_t Http_postRoon_Handle = NULL;
+TaskHandle_t Http_postInlet_Handle = NULL;
 
+// Delay task
+const TickType_t xDelay100m = pdMS_TO_TICKS(100);
+const TickType_t xDelay1000m = pdMS_TO_TICKS(1000);
+
+// Task Function
 void Fan_controller(void *parameter);
 void Data_acquisition(void *parameter);
 void Http_request(void *parameter);
+void Http_postRoom(void *parameter);
+void Http_postInlet(void *parameter);
+
 void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
 
 // Network credentials
@@ -68,6 +77,10 @@ float interval_s = 0;
 bool fanIsOn = false;
 float meanpm02 = 0;
 float ref[12];
+
+// LocalPmsData
+bool localPmsDataValid = false;
+PMS::DATA localPmsData;
 
 // PM values and weights
 uint64_t boardId;
@@ -190,6 +203,11 @@ void setup() {
   xTaskCreatePinnedToCore(Http_request, "Http_request_task", 4096, NULL, 1,
                           &Http_request_Handle, 0);
 #endif
+  xTaskCreatePinnedToCore(Http_postRoom, "Http_postRoom_task", 4096, NULL, 1,
+                          &Http_postRoon_Handle, 0);
+
+  xTaskCreatePinnedToCore(Http_postInlet, "Http_postInlet_task", 4096, NULL, 1,
+                          &Http_postInlet_Handle, 0);
 }
 
 int MultiplicationCombine(unsigned int x_high, unsigned int x_low) {
@@ -214,7 +232,6 @@ void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
 }
 
 void Fan_controller(void *parameter) {
-  bool localPmsDataValid = false;
   while (true) {
     // Setting interval length based on time
     interval_s = millis() - bootTime > INIT_INTERVAL_SECONDS * 1000
@@ -230,7 +247,6 @@ void Fan_controller(void *parameter) {
     // convert to RPM
     int tach1 = 60 * _SR * 8192 / (NP * tach_out);
 
-    PMS::DATA localPmsData;
     if (millis() > pmsReadTs + (PMS_READ_INTERVAL_SECONDS * 1000)) {
       pmsReadTs = millis();
       while (Serial1.available()) {
@@ -242,15 +258,11 @@ void Fan_controller(void *parameter) {
     }
 
     if (!fanIsOn) {
-      fanSpeedPercent = 1;
-      InletConcentration = Calculator::calculateInletConcentration(
-          TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
+      fanSpeedPercent = 0;
+      InletConcentration = Calculator::calculateInletConcentration(TARGET_PM02);
       if (InletConcentration > 900) {
         InletConcentration = 900;
       }
-    } else {
-      // InletConcentration = Calculator::calculateInletConcentration(
-      //     TARGET_PM02, Calculator::convertPercentageToRPM(fanSpeedPercent));
     }
 
     //////////////////////////////////////////////////// print
@@ -344,7 +356,7 @@ void Data_acquisition(void *parameter) {
 
     // Check for timeout of boards every 30 seconds
     espNowMaster.checkBoardTimeout();
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(xDelay1000m);
   }
 }
 
@@ -359,7 +371,7 @@ void Http_request(void *parameter) {
       MyLog::info("%s%s",
                   String("Get data from server with response code: ").c_str(),
                   String(httpCode).c_str());
-      delay(1000);  // TODO: slow down the server polling
+      vTaskDelay(xDelay1000m);  // TODO: slow down the server polling
       if (httpCode > 0) {
         // Check if the GET request was successful
         if (httpCode == HTTP_CODE_OK) {
@@ -373,7 +385,7 @@ void Http_request(void *parameter) {
             https.end();  // Close connection
             MyLog::info("%s", String("deserializeJson() failed: ").c_str());
             MyLog::info("%s", String(error.c_str()).c_str());
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(xDelay1000m);
             continue;
           }
 
@@ -394,13 +406,69 @@ void Http_request(void *parameter) {
         https.end();  // Close connection
         Serial.printf("GET request failed, error: %s\n",
                       https.errorToString(httpCode).c_str());
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(xDelay1000m);
         continue;
       }
       https.end();  // Close connection
     }
-    vTaskDelay(pdMS_TO_TICKS(1000));  // Delay before the next request
+    vTaskDelay(xDelay1000m);  // Delay before the next request
   }
 }
 
-void localPMControl(int *localPM) {}
+void Http_postRoom(void *parameter) {
+  // Variable to track last time data was sent
+  unsigned long previousMillis = 0;
+  const long interval = 60000;  // 1 minute interval
+
+  while (true) {
+    unsigned long currentMillis = millis();  // Get the current time
+
+    // Check if 1 minute has passed
+    if (currentMillis - previousMillis >= interval) {
+      previousMillis = currentMillis;  // Update the last send time
+
+      if (WiFi.status() == WL_CONNECTED) {
+        HTTPClient http;
+
+        String serverURL =
+            "http://hw.airgradient.com/sensors/778899001122/measures";
+        http.begin(serverURL);
+        http.addHeader("Content-Type",
+                       "application/json");  // Set header to JSON
+
+        // Create JSON document
+        StaticJsonDocument<200> jsonDoc;
+        jsonDoc["wifi"] = WiFi.RSSI();
+        jsonDoc["pm02"] = meanpm02;
+        jsonDoc["tacho"] = Calculator::convertPercentageToRPM(fanSpeedPercent);
+
+        // Convert JSON document to a string
+        String jsonData;
+        serializeJson(jsonDoc, jsonData);
+
+        // Send HTTP POST request
+        int httpResponseCode = http.POST(jsonData);
+
+        if (httpResponseCode > 0) {
+          String response = http.getString();
+          Serial.println("HTTP Response code: " + String(httpResponseCode));
+          Serial.println("Response: " + response);
+        } else {
+          Serial.println("Error in sending POST request");
+        }
+
+        http.end();  // Close HTTP connection
+      } else {
+        Serial.println("WiFi Disconnected");
+      }
+    }
+
+    vTaskDelay(xDelay1000m);
+  }
+}
+
+void Http_postInlet(void *parameter) {
+  while (true) {
+    vTaskDelay(xDelay1000m);
+  }
+}

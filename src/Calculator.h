@@ -15,7 +15,7 @@ class Calculator {
                                        uint16_t fanSpeedInPercent);
   static uint16_t getFanRunSpeed(float current, uint16_t target);
   static uint16_t scaleDutyCycle(const uint16_t dutyCycle);
-  static int calculateInletConcentration(int targetConcentration, int rpm);
+  static int calculateInletConcentration(int targetConcentration);
   static int convertPercentageToRPM(int percent);
 
  private:

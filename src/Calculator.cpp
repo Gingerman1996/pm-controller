@@ -160,17 +160,17 @@ float Calculator::calculateAirFlowRate(int rpm) {
   return airFlowRate;  // Return the calculated air flow rate in m3/min
 }
 
-int Calculator::calculateInletConcentration(int targetConcentration, int rpm) {
+int Calculator::calculateInletConcentration(int targetConcentration) {
   // Step 1: Convert room air leak rate from m3/h to m3/min
   double roomAirLeakRateMin =
       ROOM_AIR_LEAK_M3H / 60.0;  // Convert from m³/h to m³/min
 
   // Step 2: Calculate the airflow rate using the RPM value
-  if (rpm < 0) {
-    Serial.println("Error: RPM must be non-negative.");
-    return -1;  // Return an error value if rpm is invalid
-  }
-  float airFlowRate = calculateAirFlowRate(rpm);
+  // if (rpm < 0) {
+  //   Serial.println("Error: RPM must be non-negative.");
+  //   return -1;  // Return an error value if rpm is invalid
+  // }
+  float airFlowRate = calculateAirFlowRate(convertPercentageToRPM(1));
 
   // Check if airflow rate is greater than zero to prevent division by zero
   if (airFlowRate <= 0) {
