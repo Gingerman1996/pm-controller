@@ -84,7 +84,7 @@ float Calculator::calculatePID(float current, uint16_t target) {
 
   // Set the fan speed limits between 30% (minimum) and 60% (maximum)
   float maxFanSpeed = 60.0f;
-  float minFanSpeed = 30.0f;
+  float minFanSpeed = 25.0f;
 
   // Normalize the PID output to a range between 0 and 1
   // This assumes that the maximum error is equal to the target value
