@@ -191,6 +191,10 @@ void setup() {
   timeClient.begin();
   timeClient.update();
 
+  // Get and print MAC Address
+  String macAddress = WiFi.macAddress();
+  Serial.println("MAC Address: " + macAddress);
+
   xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL, 1,
                           &Fan_controller_Handle, 1);
 
