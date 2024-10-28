@@ -105,12 +105,16 @@ byte data, data0, data1;
       // concentration
 #define PMS_READ_INTERVAL_SECONDS 1
 unsigned int TARGET_PM02 =
-    5;  // target pm2.5 concentration in micrograms per cubic meter
+    0;  // target pm2.5 concentration in micrograms per cubic meter
+
+const int targetValues[] = {5, 10, 20, 40, 100, 150};
+const int maxHours = sizeof(targetValues) / sizeof(targetValues[0]);
+unsigned long currentNtpTime = 0;
 
 unsigned long lastUpdateTime = 0;
 int currentHour = 0;
-bool isAutoMode = false;
-bool isRunning = false;
+bool isAutoMode = true;
+bool isRunning = true;
 
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
@@ -229,14 +233,14 @@ int MultiplicationCombine(unsigned int x_high, unsigned int x_low) {
 
 void loop() {
   timeClient.update();
-  unsigned long currentNtpTime = timeClient.getEpochTime();
+  currentNtpTime = timeClient.getEpochTime();
 
   // Update every hour if in Auto mode
   if (isAutoMode && isRunning) {
     if ((currentNtpTime - lastUpdateTime) >= 3600) {
       currentHour++;
-      if (currentHour <= 8) {
-        TARGET_PM02 = min(5 + (currentHour - 1) * 20, 150);
+      if (currentHour <= maxHours) {
+        TARGET_PM02 = targetValues[currentHour - 1];
         MyLog::info("Auto mode updated, currentHour: %d, TARGET_PM02: %d",
                     currentHour, TARGET_PM02);
       } else {
@@ -248,41 +252,41 @@ void loop() {
     }
   }
 
-  // Serial command handling
-  if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
+  // // Serial command handling
+  // if (Serial.available()) {
+  //   String command = Serial.readStringUntil('\n');
+  //   command.trim();
 
-    if (command.equalsIgnoreCase("start")) {
-      isRunning = true;
-      isAutoMode = false;
-      TARGET_PM02 = 0;
-      currentHour = 0;
-      MyLog::info(
-          "System ready for operation, waiting for mode (auto or manual)");
-    } else if (command.startsWith("manual")) {
-      int manualValue = command.substring(7).toInt();
-      TARGET_PM02 = manualValue;
-      isAutoMode = false;
-      isRunning = true;
-      MyLog::info("Manual mode set, TARGET_PM02: %d", TARGET_PM02);
-    } else if (command.equalsIgnoreCase("auto")) {
-      isAutoMode = true;
-      isRunning = true;
-      TARGET_PM02 = 5;
-      currentHour = 1;
-      lastUpdateTime = currentNtpTime;
-      MyLog::info("Auto mode started");
-    } else if (command.equalsIgnoreCase("stop")) {
-      isRunning = false;
-      TARGET_PM02 = 0;
-      MyLog::info("System stopped");
-    }
-  }
+  //   if (command.equalsIgnoreCase("start")) {
+  //     isRunning = true;
+  //     isAutoMode = false;
+  //     TARGET_PM02 = 0;
+  //     currentHour = 0;
+  //     MyLog::info(
+  //         "System ready for operation, waiting for mode (auto or manual)");
+  //   } else if (command.startsWith("manual")) {
+  //     int manualValue = command.substring(7).toInt();
+  //     TARGET_PM02 = manualValue;
+  //     isAutoMode = false;
+  //     isRunning = true;
+  //     MyLog::info("Manual mode set, TARGET_PM02: %d", TARGET_PM02);
+  //   } else if (command.equalsIgnoreCase("auto")) {
+  //     isAutoMode = true;
+  //     isRunning = true;
+  //     TARGET_PM02 = 5;
+  //     currentHour = 1;
+  //     lastUpdateTime = currentNtpTime;
+  //     MyLog::info("Auto mode started");
+  //   } else if (command.equalsIgnoreCase("stop")) {
+  //     isRunning = false;
+  //     TARGET_PM02 = 0;
+  //     MyLog::info("System stopped");
+  //   }
+  // }
 
-  // Debug output to monitor status
+  // // Debug output to monitor status
   MyLog::debug("Current TARGET_PM02: %d", TARGET_PM02);
-  MyLog::debug("Current Average_PM02: %d", meanpm02);
+  MyLog::debug("Current Average_PM02: %.2f", meanpm02);
   delay(1000);
 }
 
