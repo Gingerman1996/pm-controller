@@ -104,8 +104,13 @@ byte data, data0, data1;
   90  // regulation interval between each pulse after the 1st to maintain pm2.5
       // concentration
 #define PMS_READ_INTERVAL_SECONDS 1
-const unsigned int TARGET_PM02 =
-    20;  // target pm2.5 concentration in micrograms per cubic meter
+unsigned int TARGET_PM02 =
+    5;  // target pm2.5 concentration in micrograms per cubic meter
+
+unsigned long lastUpdateTime = 0;
+int currentHour = 0;
+bool isAutoMode = false;
+bool isRunning = false;
 
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
@@ -223,7 +228,62 @@ int MultiplicationCombine(unsigned int x_high, unsigned int x_low) {
 }
 
 void loop() {
-  // Empty loop as tasks are being handled separately
+  timeClient.update();
+  unsigned long currentNtpTime = timeClient.getEpochTime();
+
+  // Update every hour if in Auto mode
+  if (isAutoMode && isRunning) {
+    if ((currentNtpTime - lastUpdateTime) >= 3600) {
+      currentHour++;
+      if (currentHour <= 8) {
+        TARGET_PM02 = min(5 + (currentHour - 1) * 20, 150);
+        MyLog::info("Auto mode updated, currentHour: %d, TARGET_PM02: %d",
+                    currentHour, TARGET_PM02);
+      } else {
+        TARGET_PM02 = 0;
+        isRunning = false;
+        MyLog::info("Auto mode completed, TARGET_PM02 set to 0");
+      }
+      lastUpdateTime = currentNtpTime;
+    }
+  }
+
+  // Serial command handling
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+
+    if (command.equalsIgnoreCase("start")) {
+      isRunning = true;
+      isAutoMode = false;
+      TARGET_PM02 = 0;
+      currentHour = 0;
+      MyLog::info(
+          "System ready for operation, waiting for mode (auto or manual)");
+    } else if (command.startsWith("manual")) {
+      int manualValue = command.substring(7).toInt();
+      TARGET_PM02 = manualValue;
+      isAutoMode = false;
+      isRunning = true;
+      MyLog::info("Manual mode set, TARGET_PM02: %d", TARGET_PM02);
+    } else if (command.equalsIgnoreCase("auto")) {
+      isAutoMode = true;
+      isRunning = true;
+      TARGET_PM02 = 5;
+      currentHour = 1;
+      lastUpdateTime = currentNtpTime;
+      MyLog::info("Auto mode started");
+    } else if (command.equalsIgnoreCase("stop")) {
+      isRunning = false;
+      TARGET_PM02 = 0;
+      MyLog::info("System stopped");
+    }
+  }
+
+  // Debug output to monitor status
+  MyLog::debug("Current TARGET_PM02: %d", TARGET_PM02);
+  MyLog::debug("Current Average_PM02: %d", meanpm02);
+  delay(1000);
 }
 
 void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
@@ -273,17 +333,17 @@ void Fan_controller(void *parameter) {
     if (millis() > pre2 + 2000) {
       pre2 = millis();
       digitalWrite(Trig1, HIGH);
-      Serial.println("/////////////////////////////////////////////////////");
-      MyLog::info("Average PM2.5: \t\t\t%.2f", meanpm02);
-      MyLog::info("pm2.5_target = \t\t\t%u", TARGET_PM02);
-      MyLog::info("Fan is running: \t\t\t%s", fanIsOn ? "true" : "false");
-      MyLog::info("LocalPmsDataValid is: \t\t%s",
-                  localPmsDataValid ? "true" : "false");
-      MyLog::info("Fan speed is: \t\t\t%d %", fanSpeedPercent);
-      MyLog::info("Fan speed: \t\t\t%d RPM",
-                  Calculator::convertPercentageToRPM(fanSpeedPercent));
-      MyLog::info("InletConcentration: \t\t%d ug/m3", InletConcentration);
-      Serial.println("/////////////////////////////////////////////////////");
+      // Serial.println("/////////////////////////////////////////////////////");
+      // MyLog::info("Average PM2.5: \t\t\t%.2f", meanpm02);
+      // MyLog::info("pm2.5_target = \t\t\t%u", TARGET_PM02);
+      // MyLog::info("Fan is running: \t\t\t%s", fanIsOn ? "true" : "false");
+      // MyLog::info("LocalPmsDataValid is: \t\t%s",
+      //             localPmsDataValid ? "true" : "false");
+      // MyLog::info("Fan speed is: \t\t\t%d %", fanSpeedPercent);
+      // MyLog::info("Fan speed: \t\t\t%d RPM",
+      //             Calculator::convertPercentageToRPM(fanSpeedPercent));
+      // MyLog::info("InletConcentration: \t\t%d ug/m3", InletConcentration);
+      // Serial.println("/////////////////////////////////////////////////////");
     }
     unsigned long now = millis();
 
@@ -338,11 +398,11 @@ void Data_acquisition(void *parameter) {
                 1.0;  // Set weight to 1.0 for equal weighting, can be changed
             numSensors++;
           }
-          MyLog::info("Board ID: %llX", boardId);
-          MyLog::info("PM2.5: %.2f", pm25);
-          MyLog::info("Temperature: %.2f", temp);
-          MyLog::info("Humidity: %.2f", humi);
-          MyLog::info("Last Updated: %lu", timestamp);
+          // MyLog::info("Board ID: %llX", boardId);
+          // MyLog::info("PM2.5: %.2f", pm25);
+          // MyLog::info("Temperature: %.2f", temp);
+          // MyLog::info("Humidity: %.2f", humi);
+          // MyLog::info("Last Updated: %lu", timestamp);
         }
       }
     }
@@ -352,10 +412,10 @@ void Data_acquisition(void *parameter) {
       meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
       if (millis() > pre2_11 + 2000) {
         pre2_11 = millis();
-        MyLog::info("Weighted Average PM2.5: %.2f", meanpm02);
+        // MyLog::info("Weighted Average PM2.5: %.2f", meanpm02);
       }
     } else {
-      MyLog::warn("No data available to calculate weighted average.");
+      // MyLog::warn("No data available to calculate weighted average.");
     }
 
     // Check for timeout of boards every 30 seconds
@@ -372,9 +432,9 @@ void Http_request(void *parameter) {
       https.begin(apiUrl);  // Specify the URL
       // Perform the GET request
       int httpCode = https.GET();
-      MyLog::info("%s%s",
-                  String("Get data from server with response code: ").c_str(),
-                  String(httpCode).c_str());
+      // MyLog::info("%s%s",
+      //             String("Get data from server with response code:
+      //             ").c_str(), String(httpCode).c_str());
       vTaskDelay(xDelay1000m);  // TODO: slow down the server polling
       if (httpCode > 0) {
         // Check if the GET request was successful
@@ -387,24 +447,24 @@ void Http_request(void *parameter) {
 
           if (error) {
             https.end();  // Close connection
-            MyLog::info("%s", String("deserializeJson() failed: ").c_str());
-            MyLog::info("%s", String(error.c_str()).c_str());
+            MyLog::error("%s", String("deserializeJson() failed: ").c_str());
+            MyLog::error("%s", String(error.c_str()).c_str());
             vTaskDelay(xDelay1000m);
             continue;
           }
 
           for (int i = 0; i < 5; i++) {
             ref[i] = float(doc[i]["pm02"]);
-            Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
+            // Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
             pmValues[i] = doc[i]["pm02"];
           }
-          Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
+          // Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
           // pmValues[5] = doc[12]["pm02"];
 
           meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
 
-          MyLog::info("%s%s", String("Mean pm02: ").c_str(),
-                      String(meanpm02).c_str());
+          // MyLog::info("%s%s", String("Mean pm02: ").c_str(),
+          //             String(meanpm02).c_str());
         }
       } else {
         https.end();  // Close connection
@@ -454,10 +514,10 @@ void Http_postRoom(void *parameter) {
 
         if (httpResponseCode > 0) {
           String response = http.getString();
-          MyLog::debug("HTTP Response code: %s", String(httpResponseCode));
-          MyLog::debug("Response: %s", response);
+          // MyLog::debug("HTTP Response code: %s", String(httpResponseCode));
+          // MyLog::debug("Response: %s", response);
         } else {
-          MyLog::error("Error in sending POST request");
+          // MyLog::error("Error in sending POST request");
         }
 
         http.end();  // Close HTTP connection
@@ -489,9 +549,9 @@ void Http_postInlet(void *parameter) {
 
       // Convert JSON document to a string
       String jsonData;
-      Serial.println("////////////////////////////////////////////////");
-      serializeJsonPretty(jsonDoc, Serial);
-      Serial.println("////////////////////////////////////////////////");
+      // Serial.println("////////////////////////////////////////////////");
+      // serializeJsonPretty(jsonDoc, Serial);
+      // Serial.println("////////////////////////////////////////////////");
       serializeJson(jsonDoc, jsonData);
 
       // Send HTTP POST request
@@ -499,15 +559,15 @@ void Http_postInlet(void *parameter) {
 
       if (httpResponseCode > 0) {
         String response = http.getString();
-        MyLog::debug("HTTP Response code: %s", String(httpResponseCode));
-        MyLog::debug("Response: %s", response);
+        // MyLog::debug("HTTP Response code: %s", String(httpResponseCode));
+        // MyLog::debug("Response: %s", response);
       } else {
-        MyLog::error("Error in sending POST request");
+        // MyLog::error("Error in sending POST request");
       }
 
       http.end();  // Close HTTP connection
     } else {
-      MyLog::debug("WiFi Disconnected");
+      // MyLog::debug("WiFi Disconnected");
     }
 
     vTaskDelay(xDelay1000m);
