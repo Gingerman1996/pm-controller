@@ -7,7 +7,7 @@ float Calculator::current_error = 0;
 float Calculator::previous_error = 0;
 float Calculator::integral = 0;
 float Calculator::derivative = 0;
-float Calculator::Kp = 0.25;   // Proportional gain
+float Calculator::Kp = 0.2;   // Proportional gain
 float Calculator::Ki = 0.01;  // Integral gain
 float Calculator::Kd = 0.2;   // Derivative gain
 
@@ -67,8 +67,8 @@ float Calculator::calculatePID(float current, uint16_t target) {
 
   // Limit the integral term to prevent it from growing too large (Anti-windup)
   float integralMax =
-      15.0f;  // Adjust this value as necessary based on your system
-  float integralMin = -15.0f;
+      20.0f;  // Adjust this value as necessary based on your system
+  float integralMin = -20.0f;
   if (integral > integralMax) integral = integralMax;
   if (integral < integralMin) integral = integralMin;
 
