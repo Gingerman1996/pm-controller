@@ -247,6 +247,7 @@ void loop() {
         TARGET_PM02 = 0;
         isRunning = false;
         MyLog::info("Auto mode completed, TARGET_PM02 set to 0");
+        vTaskDelete(Fan_controller_Handle);
       }
       lastUpdateTime = currentNtpTime;
     }
