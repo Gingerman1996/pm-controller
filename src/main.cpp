@@ -235,9 +235,40 @@ void loop() {
   timeClient.update();
   currentNtpTime = timeClient.getEpochTime();
 
+  // Serial command handling
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+
+    if (command.equalsIgnoreCase("start")) {
+      isRunning = true;
+      isAutoMode = false;
+      TARGET_PM02 = 0;
+      currentHour = 0;
+      MyLog::info(
+          "System ready for operation, waiting for mode (auto or manual)");
+    } else if (command.startsWith("manual")) {
+      int manualValue = command.substring(7).toInt();
+      TARGET_PM02 = manualValue;
+      isAutoMode = false;
+      isRunning = true;
+      MyLog::info("Manual mode set, TARGET_PM02: %d", TARGET_PM02);
+    } else if (command.equalsIgnoreCase("auto")) {
+      isAutoMode = true;
+      isRunning = true;
+      TARGET_PM02 = 5;
+      currentHour = 1;
+      lastUpdateTime = currentNtpTime;
+      MyLog::info("Auto mode started");
+    } else if (command.equalsIgnoreCase("stop")) {
+      isRunning = false;
+      TARGET_PM02 = 0;
+      MyLog::info("System stopped");
+    }
+  }
   // Update every hour if in Auto mode
   if (isAutoMode && isRunning) {
-    if ((currentNtpTime - lastUpdateTime) >= 3600) {
+    if ((currentNtpTime - lastUpdateTime) >= 900) {
       currentHour++;
       if (currentHour <= maxHours) {
         TARGET_PM02 = targetValues[currentHour - 1];
@@ -252,38 +283,6 @@ void loop() {
       lastUpdateTime = currentNtpTime;
     }
   }
-
-  // // Serial command handling
-  // if (Serial.available()) {
-  //   String command = Serial.readStringUntil('\n');
-  //   command.trim();
-
-  //   if (command.equalsIgnoreCase("start")) {
-  //     isRunning = true;
-  //     isAutoMode = false;
-  //     TARGET_PM02 = 0;
-  //     currentHour = 0;
-  //     MyLog::info(
-  //         "System ready for operation, waiting for mode (auto or manual)");
-  //   } else if (command.startsWith("manual")) {
-  //     int manualValue = command.substring(7).toInt();
-  //     TARGET_PM02 = manualValue;
-  //     isAutoMode = false;
-  //     isRunning = true;
-  //     MyLog::info("Manual mode set, TARGET_PM02: %d", TARGET_PM02);
-  //   } else if (command.equalsIgnoreCase("auto")) {
-  //     isAutoMode = true;
-  //     isRunning = true;
-  //     TARGET_PM02 = 5;
-  //     currentHour = 1;
-  //     lastUpdateTime = currentNtpTime;
-  //     MyLog::info("Auto mode started");
-  //   } else if (command.equalsIgnoreCase("stop")) {
-  //     isRunning = false;
-  //     TARGET_PM02 = 0;
-  //     MyLog::info("System stopped");
-  //   }
-  // }
 
   // // Debug output to monitor status
   MyLog::debug("Current TARGET_PM02: %d", TARGET_PM02);
@@ -545,7 +544,8 @@ void Http_postInlet(void *parameter) {
       http.addHeader("Content-Type",
                      "application/json");  // Set header to JSON
       int tacho = Calculator::convertPercentageToRPM(fanSpeedPercent);
-
+      local_pms.readUntil(localPmsData);
+      printLocalPM(localPmsDataValid, localPmsData);
       // Create JSON document
       StaticJsonDocument<200> jsonDoc;
       jsonDoc["wifi"] = WiFi.RSSI();

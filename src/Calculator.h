@@ -20,7 +20,7 @@ class Calculator {
 
  private:
   constexpr static double ROOM_VALUE_M3 = 48;
-  constexpr static double ROOM_AIR_LEAK_M3H = 24;
+  constexpr static double ROOM_AIR_LEAK_M3H = 32;
   constexpr static double FAN_MAX_AIR_FLOW_M3H =
       183 / 2;  // reality may have only half
   constexpr static double INLET_PM25_CONCENTRATION_UGM3 = 2000;

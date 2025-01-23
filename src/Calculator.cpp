@@ -72,19 +72,19 @@ float Calculator::calculatePID(float current, uint16_t target) {
   // Set the fan speed limits between 30% (minimum) and 60% (maximum) if
   // concentration higher than 20
   if (target > 20) {
-    maxFanSpeed = 60.0f;
-    minFanSpeed = 25.0f;
+    maxFanSpeed = 50.0f;
+    minFanSpeed = 30.0f;
     // Limit the integral term to prevent it from growing too large
     // (Anti-windup)
-    integralMax = 20.0f; // Adjust this value as necessary based on your system
-    integralMin = -20.0f;
-  } else if (target < 40) {
-    maxFanSpeed = 30.0f;
-    minFanSpeed = 20.0f;
+    integralMax = 5.0f; // Adjust this value as necessary based on your system
+    integralMin = -5.0f;
+  } else if (target <= 20) {
+    maxFanSpeed = 40.0f;
+    minFanSpeed = 30.0f;
     // Limit the integral term to prevent it from growing too large
     // (Anti-windup)
-    integralMax = 10.0f; // Adjust this value as necessary based on your system
-    integralMin = -10.0f;
+    integralMax = 5.0f; // Adjust this value as necessary based on your system
+    integralMin = -5.0f;
   }
 
   if (integral > integralMax)
