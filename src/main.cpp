@@ -1,4 +1,8 @@
 #include <ArduinoJson.h>
+#include <BLE2902.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
 #include <HTTPClient.h>
 #include <NTPClient.h>
 #include <PubSubClient.h>
@@ -19,6 +23,9 @@
 int Trig1 = 2;
 #define _SR 4 // speed range
 #define NP 2  // number of TACH pulse per revolution
+
+#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
 // Multi-task parameter
 TaskHandle_t Fan_controller_Handle = NULL;
@@ -117,6 +124,9 @@ int currentHour = 0;
 bool isAutoMode = true;
 bool isRunning = true;
 
+BLECharacteristic *pCharacteristic;
+bool deviceConnected = false;
+
 void set_I2C_register(byte ADDRESS, byte REGISTER, byte VALUE) {
   Wire.beginTransmission(ADDRESS);
   Wire.write(REGISTER);
@@ -153,6 +163,27 @@ float calculateWeightedAverage(float values[], float weights[],
   }
 }
 
+class MyCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    if (value == "1") {
+      isRunning = true;
+      isAutoMode = false;
+      TARGET_PM02 = 0;
+      currentHour = 0;
+      MyLog::info(
+          "System ready for operation, waiting for mode (auto or manual)");
+      xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL,
+                              1, &Fan_controller_Handle, 1);
+    } else if (value == "0") {
+      TARGET_PM02 = 0;
+      isRunning = false;
+      MyLog::info("Auto mode completed, TARGET_PM02 set to 0");
+      vTaskDelete(Fan_controller_Handle);
+    }
+  }
+};
+
 void setup() {
   Serial.begin(115200);
   Serial1.begin(9600, SERIAL_8N1, 26, 25);
@@ -164,6 +195,21 @@ void setup() {
   // Set and scan I²C bus
   Wire.begin();
   pinMode(13, INPUT_PULLUP);
+
+  BLEDevice::init("PM Controller");
+  BLEServer *pServer = BLEDevice::createServer();
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  pCharacteristic = pService->createCharacteristic(
+      CHARACTERISTIC_UUID,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+
+  pCharacteristic->setCallbacks(new MyCallbacks());
+  pService->start();
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->start();
 
   // Reset MAX31790 (POR)
   set_I2C_register(MAX31790, 0x00, B01010000); // reset
@@ -205,8 +251,9 @@ void setup() {
   String macAddress = WiFi.macAddress();
   Serial.println("MAC Address: " + macAddress);
 
-  xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL, 1,
-                          &Fan_controller_Handle, 1);
+  // xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL,
+  // 1,
+  //                         &Fan_controller_Handle, 1);
 
 #ifdef USE_ESP_NOW
   xTaskCreatePinnedToCore(Data_acquisition, "Data_acquisition_task", 4096, NULL,
@@ -248,6 +295,8 @@ void loop() {
       currentHour = 0;
       MyLog::info(
           "System ready for operation, waiting for mode (auto or manual)");
+      xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL,
+                              1, &Fan_controller_Handle, 1);
     } else if (command.startsWith("manual")) {
       int manualValue = command.substring(7).toInt();
       TARGET_PM02 = manualValue;
@@ -265,6 +314,7 @@ void loop() {
       isRunning = false;
       TARGET_PM02 = 0;
       MyLog::info("System stopped");
+      vTaskDelete(Fan_controller_Handle);
     }
   }
   // Update every hour if in Auto mode
