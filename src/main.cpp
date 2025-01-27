@@ -302,6 +302,9 @@ void loop() {
       isRunning = false;
       TARGET_PM02 = 0;
       MyLog::info("System stopped");
+      fanIsOn = false;
+      set_I2C_register(MAX31790, 0x40, 0);
+      set_I2C_register(MAX31790, 0x41, 0);
       vTaskDelete(Fan_controller_Handle);
     }
   }
@@ -317,6 +320,9 @@ void loop() {
         TARGET_PM02 = 0;
         isRunning = false;
         MyLog::info("Auto mode completed, TARGET_PM02 set to 0");
+        fanIsOn = false;
+        set_I2C_register(MAX31790, 0x40, 0);
+        set_I2C_register(MAX31790, 0x41, 0);
         vTaskDelete(Fan_controller_Handle);
       }
       lastUpdateTime = currentNtpTime;
@@ -582,7 +588,8 @@ void Http_postInlet(void *parameter) {
         http.addHeader("Content-Type",
                        "application/json");  // Set header to JSON
         int tacho = Calculator::convertPercentageToRPM(fanSpeedPercent);
-        local_pms.readUntil(localPmsData);
+        local_pms.requestRead();
+        localPmsDataValid = local_pms.readUntil(localPmsData);
         printLocalPM(localPmsDataValid, localPmsData);
         // Create JSON document
         StaticJsonDocument<200> jsonDoc;
