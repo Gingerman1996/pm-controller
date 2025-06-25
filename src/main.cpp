@@ -47,6 +47,7 @@ void Http_postRoom(void *parameter);
 void Http_postInlet(void *parameter);
 
 void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData);
+void startPMcontrol();
 
 // Network credentials
 const char *ssid = "ag-diamond_2.4GHz";
@@ -331,12 +332,39 @@ void loop() {
       }
       lastUpdateTime = currentNtpTime;
     }
+  } else if (!isAutoMode && !isRunning &&
+             currentNtpTime - lastUpdateTime >= 60000) {
+    isAutoMode = true;
+    isRunning = true;
+    TARGET_PM02 = 5;
+    currentHour = 1;
+    lastUpdateTime = currentNtpTime;
+    // maxHours = sizeof(targetValues) / sizeof(targetValues[0]);
+    maxHours = sizeof(targetValuesWorldStandard) /
+               sizeof(targetValuesWorldStandard[0]);
+    MyLog::info("Auto mode started");
+    xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL,
+                            1, &Fan_controller_Handle, 1);
   }
 
   // // Debug output to monitor status
   MyLog::debug("Current TARGET_PM02: %d", TARGET_PM02);
   MyLog::debug("Current Average_PM02: %.2f", meanpm02);
   delay(1000);
+}
+
+void startPMcontrol() {
+  isAutoMode = true;
+  isRunning = true;
+  TARGET_PM02 = 5;
+  currentHour = 1;
+  lastUpdateTime = currentNtpTime;
+  // maxHours = sizeof(targetValues) / sizeof(targetValues[0]);
+  maxHours =
+      sizeof(targetValuesWorldStandard) / sizeof(targetValuesWorldStandard[0]);
+  MyLog::info("Auto mode started");
+  xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL, 1,
+                          &Fan_controller_Handle, 1);
 }
 
 void printLocalPM(bool localPmsDataValid, PMS::DATA localPmsData) {
