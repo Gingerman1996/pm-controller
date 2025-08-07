@@ -106,7 +106,7 @@ unsigned int TARGET_PM02 =
     0; // target pm2.5 concentration in micrograms per cubic meter
 
 const int targetValues[] = {5, 10, 20, 40, 100, 150};
-const float targetValuesWorldStandard[] = {0, 5, 9, 25, 35.4};
+const float targetValuesWorldStandard[] = {5, 10, 25, 35, 50};
 int maxHours;
 unsigned long currentNtpTime = 0;
 
@@ -282,7 +282,7 @@ void loop() {
     if ((currentNtpTime - lastUpdateTime) >= 3600000) {
       currentHour++;
       if (currentHour <= maxHours) {
-        TARGET_PM02 = targetValues[currentHour - 1];
+        TARGET_PM02 = targetValuesWorldStandard[currentHour - 1];
         MyLog::info("Auto mode updated, currentHour: %d, TARGET_PM02: %d",
                     currentHour, TARGET_PM02);
       } else {
