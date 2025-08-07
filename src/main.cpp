@@ -9,14 +9,10 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Wire.h>
-#include <esp_now.h>
 
 #include "MyLog.h"
 
-// #define USE_ESP_NOW
-
 #include "Calculator.h"
-#include "ESPNowMaster.h"
 #include "PMS.h"
 
 // Pin for monitoring loop
@@ -29,7 +25,6 @@ int Trig1 = 2;
 
 // Multi-task parameter
 TaskHandle_t Fan_controller_Handle = NULL;
-TaskHandle_t Data_acquisition_Handle = NULL;
 TaskHandle_t Http_request_Handle = NULL;
 TaskHandle_t Http_postRoon_Handle = NULL;
 TaskHandle_t Http_postInlet_Handle = NULL;
@@ -41,7 +36,6 @@ const TickType_t xDelay1min = pdMS_TO_TICKS(1000 * 60);
 
 // Task Function
 void Fan_controller(void *parameter);
-void Data_acquisition(void *parameter);
 void Http_request(void *parameter);
 void Http_postRoom(void *parameter);
 void Http_postInlet(void *parameter);
@@ -52,8 +46,6 @@ void startPMcontrol();
 // Network credentials
 const char *ssid = "ag-diamond_2.4GHz";
 const char *password = "0505563014466";
-const char *APSSID = "ESP32_Master_AP";
-ESPNowMaster espNowMaster(ssid, password, APSSID);
 
 // NTP Client to get time
 WiFiUDP ntpUDP;
@@ -92,9 +84,6 @@ bool localPmsDataValid = false;
 PMS::DATA localPmsData;
 
 // PM values and weights
-uint64_t boardId;
-float pm25, temp, humi;
-unsigned long timestamp;
 float pmValues[5] = {0};
 float weights[5] = {1, 1, 1, 1, 1};
 int numSensors = 0;
@@ -235,16 +224,8 @@ void setup() {
   digitalWrite(Trig1, LOW);
   MyLog::debug("Setup Done");
 
-  espNowMaster.begin();
-
   local_pms.passiveMode();
   local_pms.wakeUp();
-
-  // Init ESP-NOW
-  if (esp_now_init() != ESP_OK) {
-    MyLog::error("Error initializing ESP-NOW");
-    return;
-  }
 
   // Initialize NTP client
   timeClient.begin();
@@ -258,15 +239,8 @@ void setup() {
   // 1,
   //                         &Fan_controller_Handle, 1);
 
-#ifdef USE_ESP_NOW
-  xTaskCreatePinnedToCore(Data_acquisition, "Data_acquisition_task", 4096, NULL,
-                          1, &Data_acquisition_Handle, 1);
-#endif
-
-#ifndef USE_ESP_NOW
   xTaskCreatePinnedToCore(Http_request, "Http_request_task", 4096, NULL, 1,
                           &Http_request_Handle, 0);
-#endif
   xTaskCreatePinnedToCore(Http_postRoom, "Http_postRoom_task", 4096, NULL, 1,
                           &Http_postRoon_Handle, 0);
 
@@ -292,17 +266,7 @@ void loop() {
     command.trim();
 
     if (command.equalsIgnoreCase("start")) {
-      isAutoMode = true;
-      isRunning = true;
-      TARGET_PM02 = 5;
-      currentHour = 1;
-      lastUpdateTime = currentNtpTime;
-      // maxHours = sizeof(targetValues) / sizeof(targetValues[0]);
-      maxHours = sizeof(targetValuesWorldStandard) /
-                 sizeof(targetValuesWorldStandard[0]);
-      MyLog::info("Auto mode started");
-      xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL,
-                              1, &Fan_controller_Handle, 1);
+      startPMcontrol();
     } else if (command.equalsIgnoreCase("stop")) {
       isRunning = false;
       TARGET_PM02 = 0;
@@ -459,44 +423,6 @@ void Fan_controller(void *parameter) {
       }
     }
     vTaskDelay(xDelay100m);
-  }
-}
-
-void Data_acquisition(void *parameter) {
-  // Update NTP time
-  timeClient.update();
-  unsigned long currentNtpTime = timeClient.getEpochTime();
-  while (true) {
-    numSensors = 0; // Reset sensor count for each loop
-    unsigned long currentNtpTime = timeClient.getEpochTime();
-    for (int i = 0; i < 128; i++) {
-      if (espNowMaster.getBoardId(i, boardId)) {
-        if (espNowMaster.getData(boardId, pm25, temp, humi, timestamp)) {
-          // Check if data is newer than 5 seconds using NTP timestamp
-          if ((currentNtpTime - timestamp) <= 5) {
-            pmValues[numSensors] = pm25;
-            weights[numSensors] =
-                1.0; // Set weight to 1.0 for equal weighting, can be changed
-            numSensors++;
-          }
-        }
-      }
-    }
-
-    // Calculate the weighted average of PM2.5 values
-    if (numSensors > 0) {
-      meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
-      if (millis() > pre2_11 + 2000) {
-        pre2_11 = millis();
-        // MyLog::info("Weighted Average PM2.5: %.2f", meanpm02);
-      }
-    } else {
-      // MyLog::warn("No data available to calculate weighted average.");
-    }
-
-    // Check for timeout of boards every 30 seconds
-    espNowMaster.checkBoardTimeout();
-    vTaskDelay(xDelay1000m);
   }
 }
 
