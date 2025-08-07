@@ -227,6 +227,18 @@ void setup() {
   local_pms.passiveMode();
   local_pms.wakeUp();
 
+  // Connect to WiFi first
+  WiFi.begin(ssid, password);
+  MyLog::info("Connecting to WiFi...");
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    MyLog::info(".");
+  }
+  
+  MyLog::info("WiFi connected!");
+  MyLog::info("IP address: %s", WiFi.localIP().toString().c_str());
+
   // Initialize NTP client
   timeClient.begin();
   timeClient.update();
@@ -234,6 +246,9 @@ void setup() {
   // Get and print MAC Address
   String macAddress = WiFi.macAddress();
   Serial.println("MAC Address: " + macAddress);
+
+  // Wait a bit before starting HTTP tasks
+  delay(5000);
 
   // xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL,
   // 1,
