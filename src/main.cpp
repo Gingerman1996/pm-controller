@@ -294,7 +294,7 @@ void loop() {
   }
   // Update every hour if in Auto mode
   if (isAutoMode && isRunning) {
-    if ((currentNtpTime - lastUpdateTime) >= 3600000) {
+    if ((currentNtpTime - lastUpdateTime) >= 3600) {
       currentHour++;
       if (currentHour <= maxHours) {
         TARGET_PM02 = targetValuesWorldStandard[currentHour - 1];
@@ -312,7 +312,7 @@ void loop() {
       lastUpdateTime = currentNtpTime;
     }
   } else if (!isAutoMode && !isRunning &&
-             currentNtpTime - lastUpdateTime >= 60000) {
+             currentNtpTime - lastUpdateTime >= 60) {
     isAutoMode = true;
     isRunning = true;
     TARGET_PM02 = 5;
