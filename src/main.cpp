@@ -102,6 +102,27 @@ byte data, data0, data1;
   90 // regulation interval between each pulse after the 1st to maintain pm2.5
      // concentration
 #define PMS_READ_INTERVAL_SECONDS 1
+
+// === PM2.5 CYCLE TIMING CONFIGURATION ===
+// 
+// AUTO_START_DELAY_SECONDS: Wait time before starting automatic system after boot
+// - Default value: 60 seconds (1 minute)
+// - For testing: Reduce to 10 seconds
+//
+// CYCLE_INTERVAL_SECONDS: Time interval between each TARGET_PM02 value change
+// - Default value: 3600 seconds (1 hour)  
+// - For testing: Reduce to 30-60 seconds
+//
+// Total cycle time = AUTO_START_DELAY + (CYCLE_INTERVAL × 5 levels)
+// Default: 1 minute + (1 hour × 5) = 5 hours 1 minute
+//
+#define AUTO_START_DELAY_SECONDS 60        // Auto start after boot (60 seconds = 1 minute)
+#define CYCLE_INTERVAL_SECONDS 3600        // Time between PM2.5 level changes (3600 seconds = 1 hour)
+
+// For testing purposes, uncomment these lines for faster cycles:
+// #define AUTO_START_DELAY_SECONDS 10      // 10 seconds for testing
+// #define CYCLE_INTERVAL_SECONDS 30        // 30 seconds for testing
+
 unsigned int TARGET_PM02 =
     0; // target pm2.5 concentration in micrograms per cubic meter
 
@@ -294,7 +315,7 @@ void loop() {
   }
   // Update every hour if in Auto mode
   if (isAutoMode && isRunning) {
-    if ((currentNtpTime - lastUpdateTime) >= 3600) {
+    if ((currentNtpTime - lastUpdateTime) >= CYCLE_INTERVAL_SECONDS) {
       currentHour++;
       if (currentHour <= maxHours) {
         TARGET_PM02 = targetValuesWorldStandard[currentHour - 1];
@@ -312,7 +333,7 @@ void loop() {
       lastUpdateTime = currentNtpTime;
     }
   } else if (!isAutoMode && !isRunning &&
-             currentNtpTime - lastUpdateTime >= 60) {
+             currentNtpTime - lastUpdateTime >= AUTO_START_DELAY_SECONDS) {
     isAutoMode = true;
     isRunning = true;
     TARGET_PM02 = 5;
