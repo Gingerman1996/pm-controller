@@ -117,7 +117,7 @@ byte data, data0, data1;
 // Default: 1 minute + (1 hour × 5) = 5 hours 1 minute
 //
 #define AUTO_START_DELAY_SECONDS 60        // Auto start after boot (60 seconds = 1 minute)
-#define CYCLE_INTERVAL_SECONDS 3600        // Time between PM2.5 level changes (3600 seconds = 1 hour)
+#define CYCLE_INTERVAL_SECONDS 1800        // Time between PM2.5 level changes (1800 seconds = 30 minutes)
 
 // For testing purposes, uncomment these lines for faster cycles:
 // #define AUTO_START_DELAY_SECONDS 10      // 10 seconds for testing
