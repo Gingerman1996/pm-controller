@@ -7,9 +7,9 @@ float Calculator::current_error = 0;
 float Calculator::previous_error = 0;
 float Calculator::integral = 0;
 float Calculator::derivative = 0;
-float Calculator::Kp = 0.15; // Proportional gain - reduced for stability
-float Calculator::Ki = 0.005; // Integral gain - reduced to prevent windup
-float Calculator::Kd = 0.25;  // Derivative gain - increased for better damping
+float Calculator::Kp = 0.2;  // Proportional gain - back to original
+float Calculator::Ki = 0.01; // Integral gain - back to original
+float Calculator::Kd = 0.2;  // Derivative gain - back to original
 float Calculator::dt = 1.0;   // Time step in seconds
 float Calculator::lastTime = 0; // Last time PID was calculated
 
@@ -94,14 +94,14 @@ float Calculator::calculatePID(float current, uint16_t target) {
   // Set the fan speed limits and integral limits based on target concentration
   if (target > 20) {
     maxFanSpeed = 50.0f;
-    minFanSpeed = 25.0f; // Reduced minimum for better control
-    integralMax = 10.0f; // Increased for better steady-state accuracy
-    integralMin = -10.0f;
+    minFanSpeed = 30.0f; // Back to original minimum
+    integralMax = 5.0f;  // Back to original integral limits
+    integralMin = -5.0f;
   } else {
     maxFanSpeed = 40.0f;
-    minFanSpeed = 20.0f; // Reduced minimum for better control
-    integralMax = 8.0f;
-    integralMin = -8.0f;
+    minFanSpeed = 30.0f; // Back to original minimum
+    integralMax = 5.0f;  // Back to original integral limits
+    integralMin = -5.0f;
   }
 
   // Anti-windup: Limit the integral term
