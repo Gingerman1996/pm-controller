@@ -127,7 +127,7 @@ unsigned int TARGET_PM02 =
     0; // target pm2.5 concentration in micrograms per cubic meter
 
 const int targetValues[] = {5, 10, 20, 40, 100, 150};
-const float targetValuesWorldStandard[] = {5, 10, 25, 35, 50};
+const float targetValuesWorldStandard[] = {2, 5, 10, 25, 35, 50};
 int maxHours;
 unsigned long currentNtpTime = 0;
 
