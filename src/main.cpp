@@ -336,7 +336,7 @@ void loop() {
              currentNtpTime - lastUpdateTime >= AUTO_START_DELAY_SECONDS) {
     isAutoMode = true;
     isRunning = true;
-    TARGET_PM02 = 5;
+    TARGET_PM02 = 2;
     currentHour = 1;
     lastUpdateTime = currentNtpTime;
     // maxHours = sizeof(targetValues) / sizeof(targetValues[0]);
@@ -356,7 +356,7 @@ void loop() {
 void startPMcontrol() {
   isAutoMode = true;
   isRunning = true;
-  TARGET_PM02 = 5;
+  TARGET_PM02 = 2;
   currentHour = 1;
   lastUpdateTime = currentNtpTime;
   // maxHours = sizeof(targetValues) / sizeof(targetValues[0]);
