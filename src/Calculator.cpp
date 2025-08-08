@@ -7,9 +7,11 @@ float Calculator::current_error = 0;
 float Calculator::previous_error = 0;
 float Calculator::integral = 0;
 float Calculator::derivative = 0;
-float Calculator::Kp = 0.2;  // Proportional gain
-float Calculator::Ki = 0.01; // Integral gain
-float Calculator::Kd = 0.2;  // Derivative gain
+float Calculator::Kp = 0.15; // Proportional gain - reduced for stability
+float Calculator::Ki = 0.005; // Integral gain - reduced to prevent windup
+float Calculator::Kd = 0.25;  // Derivative gain - increased for better damping
+float Calculator::dt = 1.0;   // Time step in seconds
+float Calculator::lastTime = 0; // Last time PID was calculated
 
 float Calculator::getFanRunningInterval(float current, uint16_t target) {
   // Serial.println("Use Calculation V1");
@@ -52,79 +54,117 @@ uint16_t Calculator::scaleDutyCycle(const uint16_t dutyCycle) {
 
 // Function to calculate the PID output
 float Calculator::calculatePID(float current, uint16_t target) {
+  // Get current time in milliseconds
+  float currentTime = millis() / 1000.0; // Convert to seconds
+  
+  // Calculate time difference since last PID calculation
+  if (lastTime == 0) {
+    lastTime = currentTime;
+    dt = 1.0; // Default time step for first calculation
+  } else {
+    dt = currentTime - lastTime;
+    lastTime = currentTime;
+  }
+  
+  // Ensure minimum time step to prevent division by zero
+  if (dt <= 0.01) dt = 0.01;
+  
   // Calculate the error (difference between target and current value)
-
-  // If the current dust level is greater than or equal to the target, set fan
-  // speed to 0
+  // If the current dust level is greater than or equal to the target, set fan speed to 0
   if (current >= target) {
+    // Reset PID terms when target is reached to prevent integral windup
+    integral = 0;
+    previous_error = 0;
     return 0.0f; // Turn off the fan
   }
 
   current_error = target - current;
 
-  // Accumulate the error over time (Integral) and apply windup prevention
-  integral += current_error;
-
+  // Proportional term with deadband to reduce noise
+  float proportionalTerm = Kp * current_error;
+  
+  // Integral term with anti-windup protection
+  integral += current_error * dt;
+  
   float maxFanSpeed;
   float minFanSpeed;
   float integralMax;
   float integralMin;
-  // Set the fan speed limits between 30% (minimum) and 60% (maximum) if
-  // concentration higher than 20
+  
+  // Set the fan speed limits and integral limits based on target concentration
   if (target > 20) {
     maxFanSpeed = 50.0f;
-    minFanSpeed = 30.0f;
-    // Limit the integral term to prevent it from growing too large
-    // (Anti-windup)
-    integralMax = 5.0f; // Adjust this value as necessary based on your system
-    integralMin = -5.0f;
-  } else if (target <= 20) {
+    minFanSpeed = 25.0f; // Reduced minimum for better control
+    integralMax = 10.0f; // Increased for better steady-state accuracy
+    integralMin = -10.0f;
+  } else {
     maxFanSpeed = 40.0f;
-    minFanSpeed = 30.0f;
-    // Limit the integral term to prevent it from growing too large
-    // (Anti-windup)
-    integralMax = 5.0f; // Adjust this value as necessary based on your system
-    integralMin = -5.0f;
+    minFanSpeed = 20.0f; // Reduced minimum for better control
+    integralMax = 8.0f;
+    integralMin = -8.0f;
   }
 
-  if (integral > integralMax)
-    integral = integralMax;
-  if (integral < integralMin)
-    integral = integralMin;
+  // Anti-windup: Limit the integral term
+  if (integral > integralMax) integral = integralMax;
+  if (integral < integralMin) integral = integralMin;
 
-  // Calculate the rate of change of the error (Derivative)
-  derivative = current_error - previous_error;
+  float integralTerm = Ki * integral;
 
-  // Compute the PID output using the Proportional, Integral, and Derivative
-  // components
-  float pidOutput = (Kp * current_error) + (Ki * integral) + (Kd * derivative);
+  // Derivative term with filtering to reduce noise
+  derivative = (current_error - previous_error) / dt;
+  
+  // Apply low-pass filter to derivative to reduce noise
+  static float filtered_derivative = 0;
+  float alpha = 0.1; // Low-pass filter coefficient (0-1, lower = more filtering)
+  filtered_derivative = alpha * derivative + (1 - alpha) * filtered_derivative;
+  
+  float derivativeTerm = Kd * filtered_derivative;
+
+  // Compute the PID output
+  float pidOutput = proportionalTerm + integralTerm + derivativeTerm;
 
   // Store the current error for the next calculation (for the next cycle)
   previous_error = current_error;
 
-  // Normalize the PID output to a range between 0 and 1
-  // This assumes that the maximum error is equal to the target value
-  float normalizedOutput = pidOutput / (Kp * target);
-  if (normalizedOutput < 0.0f)
-    normalizedOutput = 0.0f;
-  if (normalizedOutput > 1.0f)
-    normalizedOutput = 1.0f;
+  // Improved output scaling with better normalization
+  // Use a more conservative approach to avoid overshooting
+  float outputScale = 1.0f / (Kp * target * 0.5f); // More conservative scaling
+  float normalizedOutput = pidOutput * outputScale;
+  
+  // Apply saturation limits
+  if (normalizedOutput < 0.0f) normalizedOutput = 0.0f;
+  if (normalizedOutput > 1.0f) normalizedOutput = 1.0f;
 
-  // Scale the normalized output to fit within the range from minFanSpeed to
-  // maxFanSpeed
-  float fanSpeed =
-      minFanSpeed + (normalizedOutput * (maxFanSpeed - minFanSpeed));
+  // Scale the normalized output to fit within the range from minFanSpeed to maxFanSpeed
+  // Use a smooth transition curve for better control
+  float fanSpeed = minFanSpeed + (normalizedOutput * (maxFanSpeed - minFanSpeed));
 
-  // Ensure the fan speed is not lower than the minimum speed and not higher
-  // than the maximum speed
-  if (fanSpeed < minFanSpeed)
-    fanSpeed = minFanSpeed;
-  if (fanSpeed > maxFanSpeed)
-    fanSpeed = maxFanSpeed;
+  // Apply deadband near the target to reduce oscillation
+  float errorPercent = abs(current_error) / target;
+  if (errorPercent < 0.05) { // 5% deadband
+    // Reduce fan speed gradually when close to target
+    fanSpeed *= (errorPercent / 0.05);
+  }
+
+  // Ensure the fan speed is within limits
+  if (fanSpeed < minFanSpeed) fanSpeed = minFanSpeed;
+  if (fanSpeed > maxFanSpeed) fanSpeed = maxFanSpeed;
+
+  // Add rate limiting to prevent sudden changes
+  static float lastFanSpeed = 0;
+  float maxChangeRate = 5.0f; // Maximum change per second (%)
+  float maxChange = maxChangeRate * dt;
+  
+  if (abs(fanSpeed - lastFanSpeed) > maxChange) {
+    if (fanSpeed > lastFanSpeed) {
+      fanSpeed = lastFanSpeed + maxChange;
+    } else {
+      fanSpeed = lastFanSpeed - maxChange;
+    }
+  }
+  lastFanSpeed = fanSpeed;
 
   // Return the calculated fan speed
-  // Serial.print("fanSpeed from PID function: ");
-  // Serial.println(fanSpeed);
   return fanSpeed;
 }
 
@@ -216,4 +256,13 @@ int Calculator::calculateInletConcentration(int targetConcentration) {
 
   return inletConcentration; // Return the calculated inlet concentration in
                              // µg/m³
+}
+
+// Reset PID controller state - useful when changing targets or restarting
+void Calculator::resetPID() {
+  current_error = 0;
+  previous_error = 0;
+  integral = 0;
+  derivative = 0;
+  lastTime = 0;
 }

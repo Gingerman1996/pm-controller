@@ -17,6 +17,7 @@ class Calculator {
   static uint16_t scaleDutyCycle(const uint16_t dutyCycle);
   static int calculateInletConcentration(int targetConcentration);
   static int convertPercentageToRPM(int percent);
+  static void resetPID(); // Reset PID controller state
 
  private:
   constexpr static double ROOM_VALUE_M3 = 48;
@@ -27,6 +28,7 @@ class Calculator {
   // Static PID Variables
   static float current_error, previous_error, integral, derivative;
   static float Kp, Ki, Kd;
+  static float dt, lastTime;  // Time tracking for PID
   constexpr static double ductDiameter =
       0.1016;  // Diameter of duct in meters (4 inches)
   constexpr static double k =
