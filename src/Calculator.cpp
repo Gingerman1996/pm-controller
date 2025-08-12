@@ -13,11 +13,6 @@ float Calculator::Kd = 0.05;  // Lower derivative gain to reduce noise in genera
 float Calculator::dt = 1.0;   // Time step in seconds
 float Calculator::lastTime = 0; // Last time PID was calculated
 
-float Calculator::getFanRunningInterval(float current, uint16_t target) {
-  // Serial.println("Use Calculation V1");
-  return current < target ? pow(target - current, 0.7) * 1350 * 2 : 0;
-}
-
 float Calculator::getFanRunningIntervalV2(float startValue,
                                           uint16_t targetValue,
                                           uint16_t fanSpeedInPercent) {
@@ -169,39 +164,6 @@ float Calculator::calculatePID(float current, uint16_t target) {
   return fanSpeed;
 }
 
-// Function to control fan RPM based on target PM2.5 flow rate
-float Calculator::controlFanRPM(double targetPM25FlowRate,
-                                double inletPMConcentration) {
-  // Constants
-  constexpr double ductDiameter =
-      0.1016; // Diameter of duct in meters (4 inches)
-  constexpr double roomAirLeak =
-      ROOM_AIR_LEAK_M3H /
-      60; // Room air leak rate in m3 per minute (converted from m3/h)
-
-  // Step 1: Calculate the cross-sectional area of the duct (A = π * (D/2)^2)
-  double area = M_PI * std::pow(ductDiameter / 2.0, 2);
-
-  // Step 2: Calculate the required air flow rate to meet the target PM2.5 flow
-  // rate
-  double requiredAirFlowRate =
-      targetPM25FlowRate /
-      inletPMConcentration; // Required air flow rate in m3/min
-
-  // Step 3: Subtract room air leakage from the required air flow rate
-  double netAirFlowRate = requiredAirFlowRate - roomAirLeak;
-
-  // Step 4: Calculate the required air velocity (V = Q / A)
-  double requiredVelocity =
-      netAirFlowRate / area; // Required velocity in meters per minute
-
-  // Step 5: Calculate the required RPM (RPM = V / k)
-  constexpr double k = 0.2516; // Calculated k value based on the fan specs
-  double requiredRPM = requiredVelocity / k; // Required RPM for the fan
-
-  return requiredRPM;
-}
-
 int Calculator::convertPercentageToRPM(int percent) {
   constexpr double maxRPM = 3000.0;
   int rpm = (percent / 100.0) * maxRPM;
@@ -257,13 +219,4 @@ int Calculator::calculateInletConcentration(int targetConcentration) {
 
   return inletConcentration; // Return the calculated inlet concentration in
                              // µg/m³
-}
-
-// Reset PID controller state - useful when changing targets or restarting
-void Calculator::resetPID() {
-  current_error = 0;
-  previous_error = 0;
-  integral = 0;
-  derivative = 0;
-  lastTime = 0;
 }
