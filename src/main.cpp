@@ -83,10 +83,10 @@ float ref[12];
 bool localPmsDataValid = false;
 PMS::DATA localPmsData;
 
-// PM values and weights
-float pmValues[5] = {0};
-float weights[5] = {1, 1, 1, 1, 1};
-int numSensors = 0;
+// PM values - Not used anymore since we only fetch data from sensor #5
+// float pmValues[5] = {0};
+// float weights[5] = {1, 1, 1, 1, 1};
+// int numSensors = 0;
 
 // PMS sensor
 PMS local_pms(Serial1);
@@ -155,25 +155,8 @@ byte get_I2C_register(byte ADDRESS, byte REGISTER) {
   return x;
 }
 
-// Function to calculate the weighted average
-float calculateWeightedAverage(float values[], float weights[],
-                               int numSensors) {
-  float weightedSum = 0.0;
-  float totalWeight = 0.0;
-
-  // Calculate the total weighted sum and total weight
-  for (int i = 0; i < numSensors; i++) {
-    weightedSum += values[i] * weights[i];
-    totalWeight += weights[i];
-  }
-
-  // Return the weighted average
-  if (totalWeight == 0) {
-    return 0; // Prevent division by zero
-  } else {
-    return weightedSum / totalWeight;
-  }
-}
+// Function calculateWeightedAverage removed because it's no longer needed
+// since we only fetch data from sensor #5
 
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) {
@@ -463,7 +446,7 @@ void Fan_controller(void *parameter) {
 }
 
 void Http_request(void *parameter) {
-  numSensors = 5;
+  // No longer need numSensors since we only fetch data from sensor #5
   while (true) {
     if (WiFi.status() == WL_CONNECTED) {
       HTTPClient https;
@@ -488,15 +471,8 @@ void Http_request(void *parameter) {
             continue;
           }
 
-          for (int i = 0; i < 5; i++) {
-            ref[i] = float(doc[i]["pm02"]);
-            // Serial.printf("Ref #%d: %.2f\n", i, ref[i]);
-            pmValues[i] = doc[i]["pm02"];
-          }
-          // Serial.printf("Ref #11: %.2f\n", float(doc[12]["pm02"]));
-          // pmValues[5] = doc[12]["pm02"];
-
-          meanpm02 = calculateWeightedAverage(pmValues, weights, numSensors);
+          // Fetch data only from sensor #5 (index 5)
+          meanpm02 = float(doc[5]["pm02"]);
 
           // MyLog::info("%s%s", String("Mean pm02: ").c_str(),
           //             String(meanpm02).c_str());
