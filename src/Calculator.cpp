@@ -2,14 +2,14 @@
 
 #include "Arduino.h"
 
-// Initialize static PID variables in Calculator.cpp
+// Initialize static PID variables for PM generation system
 float Calculator::current_error = 0;
 float Calculator::previous_error = 0;
 float Calculator::integral = 0;
 float Calculator::derivative = 0;
-float Calculator::Kp = 0.2;  // Proportional gain - back to original
-float Calculator::Ki = 0.01; // Integral gain - back to original
-float Calculator::Kd = 0.2;  // Derivative gain - back to original
+float Calculator::Kp = 0.4;  // Higher proportional gain for PM generation response
+float Calculator::Ki = 0.008; // Moderate integral gain for steady-state accuracy
+float Calculator::Kd = 0.05;  // Lower derivative gain to reduce noise in generation system
 float Calculator::dt = 1.0;   // Time step in seconds
 float Calculator::lastTime = 0; // Last time PID was calculated
 
@@ -34,18 +34,13 @@ float Calculator::getFanRunningIntervalV2(float startValue,
 }
 
 uint16_t Calculator::getFanRunSpeed(float current, uint16_t target) {
-  // Calculate the PID control output for adjusting the fan speed
-  float fanSpeedPID = calculatePID(current, target);
-  // Serial.print("Fan Speed PID: ");
-  // Serial.println(fanSpeedPID);
+  // Calculate the PID control output for adjusting the PM generator speed
+  float generatorSpeedPID = calculatePID(current, target);
+  // Serial.print("Generator Speed PID: ");
+  // Serial.println(generatorSpeedPID);
 
-  // Calculate the minimum fan speed percentage based on air leakage and maximum
-  // airflow
-  float minSpeedPercent = (ROOM_AIR_LEAK_M3H / FAN_MAX_AIR_FLOW_M3H) * 100 * 2;
-
-  // Constrain the fan speed within a suitable range (between minSpeedPercent
-  // and 60%)
-  return fanSpeedPID;
+  // Return the calculated generator speed percentage
+  return generatorSpeedPID;
 }
 
 uint16_t Calculator::scaleDutyCycle(const uint16_t dutyCycle) {
@@ -70,15 +65,17 @@ float Calculator::calculatePID(float current, uint16_t target) {
   if (dt <= 0.01) dt = 0.01;
   
   // Calculate the error (difference between target and current value)
-  // If the current dust level is greater than or equal to the target, set fan speed to 0
-  if (current >= target) {
-    // Reset PID terms when target is reached to prevent integral windup
-    integral = 0;
-    previous_error = 0;
-    return 0.0f; // Turn off the fan
-  }
-
+  // For PM2.5 generation: positive error means PM2.5 is below target (need more generation)
   current_error = target - current;
+  
+  // If current PM2.5 is at or above target, reduce generation speed but don't turn off completely
+  if (current_error <= 0) {
+    // Use minimum speed when at or above target to maintain baseline generation
+    float minSpeedPercent = 10.0f; // Minimum baseline generation speed
+    // Reset integral to prevent windup when at target
+    integral *= 0.5; // Gradually reduce integral instead of resetting completely
+    return minSpeedPercent;
+  }
 
   // Proportional term with deadband to reduce noise
   float proportionalTerm = Kp * current_error;
@@ -91,17 +88,18 @@ float Calculator::calculatePID(float current, uint16_t target) {
   float integralMax;
   float integralMin;
   
-  // Set the fan speed limits and integral limits based on target concentration
+  // Set the generator speed limits and integral limits based on target concentration
+  // For PM generation system
   if (target > 20) {
-    maxFanSpeed = 50.0f;
-    minFanSpeed = 30.0f; // Back to original minimum
-    integralMax = 5.0f;  // Back to original integral limits
-    integralMin = -5.0f;
+    maxFanSpeed = 60.0f;  // Higher max speed for PM generation
+    minFanSpeed = 15.0f;  // Minimum generation speed
+    integralMax = 8.0f;   // Higher integral limits for generation
+    integralMin = -3.0f;
   } else {
-    maxFanSpeed = 40.0f;
-    minFanSpeed = 30.0f; // Back to original minimum
-    integralMax = 5.0f;  // Back to original integral limits
-    integralMin = -5.0f;
+    maxFanSpeed = 45.0f;  // Medium speed for lower targets
+    minFanSpeed = 10.0f;  // Lower minimum for sensitive targets
+    integralMax = 5.0f;   
+    integralMin = -2.0f;
   }
 
   // Anti-windup: Limit the integral term
@@ -110,7 +108,8 @@ float Calculator::calculatePID(float current, uint16_t target) {
 
   float integralTerm = Ki * integral;
 
-  // Derivative term with filtering to reduce noise
+  // Derivative term with proper calculation for PM generation
+  // For PM generation, normal derivative calculation works well
   derivative = (current_error - previous_error) / dt;
   
   // Apply low-pass filter to derivative to reduce noise
@@ -126,10 +125,10 @@ float Calculator::calculatePID(float current, uint16_t target) {
   // Store the current error for the next calculation (for the next cycle)
   previous_error = current_error;
 
-  // Improved output scaling with better normalization
-  // Use a more conservative approach to avoid overshooting
-  float outputScale = 1.0f / (Kp * target * 0.5f); // More conservative scaling
-  float normalizedOutput = pidOutput * outputScale;
+  // Improved output scaling with proper normalization
+  // Scale based on expected maximum error instead of target value
+  float maxExpectedError = target * 2.0f; // Assume max error could be 2x target
+  float normalizedOutput = pidOutput / maxExpectedError;
   
   // Apply saturation limits
   if (normalizedOutput < 0.0f) normalizedOutput = 0.0f;
@@ -139,24 +138,26 @@ float Calculator::calculatePID(float current, uint16_t target) {
   // Use a smooth transition curve for better control
   float fanSpeed = minFanSpeed + (normalizedOutput * (maxFanSpeed - minFanSpeed));
 
-  // Apply deadband near the target to reduce oscillation
+  // Apply deadband near the target to reduce oscillation in PM generation
   float errorPercent = abs(current_error) / target;
-  if (errorPercent < 0.05) { // 5% deadband
-    // Reduce fan speed gradually when close to target
-    fanSpeed *= (errorPercent / 0.05);
+  if (errorPercent < 0.08) { // 8% deadband for PM generation (slightly wider for stability)
+    // Reduce generator speed gradually when close to target
+    fanSpeed = minFanSpeed + (fanSpeed - minFanSpeed) * (errorPercent / 0.08);
   }
 
-  // Ensure the fan speed is within limits
+  // Ensure the generator speed is within limits
   if (fanSpeed < minFanSpeed) fanSpeed = minFanSpeed;
   if (fanSpeed > maxFanSpeed) fanSpeed = maxFanSpeed;
 
-  // Add rate limiting to prevent sudden changes
-  static float lastFanSpeed = 0;
-  float maxChangeRate = 5.0f; // Maximum change per second (%)
+  // Add rate limiting to prevent sudden changes in PM generation
+  static float lastFanSpeed = minFanSpeed; // Initialize to minimum speed
+  float maxChangeRate = 8.0f; // Moderate rate for PM generation (% per second)
   float maxChange = maxChangeRate * dt;
   
-  if (abs(fanSpeed - lastFanSpeed) > maxChange) {
-    if (fanSpeed > lastFanSpeed) {
+  // Apply rate limiting only if the change is significant
+  float speedDifference = fanSpeed - lastFanSpeed;
+  if (abs(speedDifference) > maxChange) {
+    if (speedDifference > 0) {
       fanSpeed = lastFanSpeed + maxChange;
     } else {
       fanSpeed = lastFanSpeed - maxChange;
