@@ -103,36 +103,43 @@ byte data, data0, data1;
      // concentration
 #define PMS_READ_INTERVAL_SECONDS 1
 
-// === PM2.5 CYCLE TIMING CONFIGURATION ===
+// === PM2.5 EXPONENTIAL RISE CONFIGURATION ===
 // 
 // AUTO_START_DELAY_SECONDS: Wait time before starting automatic system after boot
 // - Default value: 60 seconds (1 minute)
 // - For testing: Reduce to 10 seconds
 //
-// CYCLE_INTERVAL_SECONDS: Time interval between each TARGET_PM02 value change
-// - Default value: 3600 seconds (1 hour)  
-// - For testing: Reduce to 30-60 seconds
+// EXPONENTIAL_RISE_DURATION_SECONDS: Total time for PM to rise from 0 to 50 μg/m³
+// - Default value: 7200 seconds (2 hours)
+// - For testing: Reduce to 300 seconds (5 minutes)
 //
-// Total cycle time = AUTO_START_DELAY + (CYCLE_INTERVAL × 5 levels)
-// Default: 1 minute + (1 hour × 5) = 5 hours 1 minute
+// Total cycle time = AUTO_START_DELAY + EXPONENTIAL_RISE_DURATION + MAINTENANCE_DURATION
+// Default: 1 minute + 2 hours + 20 minutes = 2 hours 21 minutes
 //
 #define AUTO_START_DELAY_SECONDS 60        // Auto start after boot (60 seconds = 1 minute)
-#define CYCLE_INTERVAL_SECONDS 1800        // Time between PM2.5 level changes (1800 seconds = 30 minutes)
+#define EXPONENTIAL_RISE_DURATION_SECONDS 7200  // 2 hours exponential rise (7200 seconds = 2 hours)
+#define MAINTENANCE_DURATION_SECONDS 1200       // 20 minutes maintenance at target (1200 seconds = 20 minutes)
 
 // For testing purposes, uncomment these lines for faster cycles:
 // #define AUTO_START_DELAY_SECONDS 10      // 10 seconds for testing
-// #define CYCLE_INTERVAL_SECONDS 30        // 30 seconds for testing
+// #define EXPONENTIAL_RISE_DURATION_SECONDS 300  // 5 minutes for testing
+// #define MAINTENANCE_DURATION_SECONDS 60  // 1 minute for testing
 
 unsigned int TARGET_PM02 =
     0; // target pm2.5 concentration in micrograms per cubic meter
 
-const int targetValues[] = {5, 10, 20, 40, 100, 150};
-const float targetValuesWorldStandard[] = {2, 5, 10, 25, 35, 50};
-int maxHours;
+// Remove old step-based targets, now using exponential rise
+// const int targetValues[] = {5, 10, 20, 40, 100, 150};
+// const float targetValuesWorldStandard[] = {2, 5, 10, 25, 35, 50};
+const float MAX_PM_TARGET = 50.0;  // Maximum PM2.5 target for exponential rise
+
+unsigned long exponentialStartTime = 0;
+bool exponentialRiseActive = false;
+unsigned long maintenanceStartTime = 0;
+bool maintenanceActive = false;
 unsigned long currentNtpTime = 0;
 
 unsigned long lastUpdateTime = 0;
-int currentHour = 0;
 bool isAutoMode = false;
 bool isRunning = false;
 
@@ -288,46 +295,103 @@ void loop() {
       startPMcontrol();
     } else if (command.equalsIgnoreCase("stop")) {
       isRunning = false;
+      exponentialRiseActive = false;
+      maintenanceActive = false;
       TARGET_PM02 = 0;
       MyLog::info("System stopped");
       fanIsOn = false;
       set_I2C_register(MAX31790, 0x40, 0);
       set_I2C_register(MAX31790, 0x41, 0);
       vTaskDelete(Fan_controller_Handle);
+    } else if (command.equalsIgnoreCase("status")) {
+      if (exponentialRiseActive) {
+        unsigned long currentTime = millis();
+        float elapsedTime = (currentTime - exponentialStartTime) / 1000.0;
+        float progress = (elapsedTime / EXPONENTIAL_RISE_DURATION_SECONDS) * 100.0;
+        MyLog::info("Exponential rise active: %.1f%% complete, TARGET: %d μg/m³", 
+                    progress, TARGET_PM02);
+      } else if (maintenanceActive) {
+        unsigned long currentTime = millis();
+        float elapsedTime = (currentTime - maintenanceStartTime) / 1000.0;
+        float remaining = (MAINTENANCE_DURATION_SECONDS - elapsedTime) / 60.0;
+        MyLog::info("Maintenance phase: %.1f minutes remaining at %d μg/m³", 
+                    remaining, TARGET_PM02);
+      } else if (isRunning) {
+        MyLog::info("System running, maintaining TARGET: %d μg/m³", TARGET_PM02);
+      } else {
+        MyLog::info("System stopped");
+      }
+    } else if (command.equalsIgnoreCase("help")) {
+      MyLog::info("Available commands:");
+      MyLog::info("  start  - Start exponential PM rise (0 to 50 μg/m³ over 2 hours)");
+      MyLog::info("          Then maintain 50 μg/m³ for 20 minutes and shutdown");
+      MyLog::info("  stop   - Stop system and set fan to 0");
+      MyLog::info("  status - Show current system status");
+      MyLog::info("  help   - Show this help message");
     }
   }
-  // Update every hour if in Auto mode
+  // Update system state based on current phase
   if (isAutoMode && isRunning) {
-    if ((currentNtpTime - lastUpdateTime) >= CYCLE_INTERVAL_SECONDS) {
-      currentHour++;
-      if (currentHour <= maxHours) {
-        TARGET_PM02 = targetValuesWorldStandard[currentHour - 1];
-        MyLog::info("Auto mode updated, currentHour: %d, TARGET_PM02: %d",
-                    currentHour, TARGET_PM02);
+    unsigned long currentTime = millis();
+    
+    if (exponentialRiseActive) {
+      // Phase 1: Exponential rise from 0 to 50 μg/m³
+      float elapsedTime = (currentTime - exponentialStartTime) / 1000.0; // Convert to seconds
+      
+      if (elapsedTime >= EXPONENTIAL_RISE_DURATION_SECONDS) {
+        // Exponential rise completed, start maintenance phase
+        TARGET_PM02 = MAX_PM_TARGET;
+        exponentialRiseActive = false;
+        maintenanceActive = true;
+        maintenanceStartTime = currentTime;
+        MyLog::info("Exponential rise completed. Starting maintenance phase at %.1f μg/m³ for %.1f minutes", 
+                    (float)TARGET_PM02, MAINTENANCE_DURATION_SECONDS / 60.0);
       } else {
+        // Calculate current exponential target
+        float currentTarget = Calculator::calculateExponentialTarget(currentTime);
+        TARGET_PM02 = (unsigned int)currentTarget;
+        
+        // Log progress every 30 seconds to avoid spam
+        static unsigned long lastProgressLog = 0;
+        if (currentTime - lastProgressLog >= 30000) { // 30 seconds
+          lastProgressLog = currentTime;
+          MyLog::info("Exponential rise progress: %.1f/%.1f μg/m³ (%.1f%% complete)", 
+                      currentTarget, MAX_PM_TARGET, (elapsedTime / EXPONENTIAL_RISE_DURATION_SECONDS) * 100.0);
+        }
+      }
+    } else if (maintenanceActive) {
+      // Phase 2: Maintain target for specified duration
+      float elapsedTime = (currentTime - maintenanceStartTime) / 1000.0; // Convert to seconds
+      
+      if (elapsedTime >= MAINTENANCE_DURATION_SECONDS) {
+        // Maintenance completed, shutdown system
         TARGET_PM02 = 0;
         isRunning = false;
-        MyLog::info("Auto mode completed, TARGET_PM02 set to 0");
+        exponentialRiseActive = false;
+        maintenanceActive = false;
+        MyLog::info("Maintenance phase completed. System shutdown - PM will naturally decay");
         fanIsOn = false;
         set_I2C_register(MAX31790, 0x40, 0);
         set_I2C_register(MAX31790, 0x41, 0);
         vTaskDelete(Fan_controller_Handle);
+      } else {
+        // Continue maintaining target
+        TARGET_PM02 = MAX_PM_TARGET;
+        
+        // Log maintenance progress every 2 minutes
+        static unsigned long lastMaintenanceLog = 0;
+        if (currentTime - lastMaintenanceLog >= 120000) { // 2 minutes
+          lastMaintenanceLog = currentTime;
+          float remaining = (MAINTENANCE_DURATION_SECONDS - elapsedTime) / 60.0;
+          MyLog::info("Maintenance phase: %.1f minutes remaining at %d μg/m³", 
+                      remaining, TARGET_PM02);
+        }
       }
-      lastUpdateTime = currentNtpTime;
     }
   } else if (!isAutoMode && !isRunning &&
              currentNtpTime - lastUpdateTime >= AUTO_START_DELAY_SECONDS) {
-    isAutoMode = true;
-    isRunning = true;
-    TARGET_PM02 = 2;
-    currentHour = 1;
-    lastUpdateTime = currentNtpTime;
-    // maxHours = sizeof(targetValues) / sizeof(targetValues[0]);
-    maxHours = sizeof(targetValuesWorldStandard) /
-               sizeof(targetValuesWorldStandard[0]);
-    MyLog::info("Auto mode started");
-    xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL,
-                            1, &Fan_controller_Handle, 1);
+    // Auto-start the exponential rise mode
+    startPMcontrol();
   }
 
   // // Debug output to monitor status
@@ -339,13 +403,20 @@ void loop() {
 void startPMcontrol() {
   isAutoMode = true;
   isRunning = true;
-  TARGET_PM02 = 2;
-  currentHour = 1;
+  exponentialRiseActive = true;
+  maintenanceActive = false;
+  exponentialStartTime = millis();
+  maintenanceStartTime = 0;
+  TARGET_PM02 = 0;  // Start from 0
   lastUpdateTime = currentNtpTime;
-  // maxHours = sizeof(targetValues) / sizeof(targetValues[0]);
-  maxHours =
-      sizeof(targetValuesWorldStandard) / sizeof(targetValuesWorldStandard[0]);
-  MyLog::info("Auto mode started");
+  
+  // Initialize exponential rise in Calculator
+  Calculator::initExponentialRise(MAX_PM_TARGET, EXPONENTIAL_RISE_DURATION_SECONDS);
+  
+  MyLog::info("Exponential PM rise mode started - 0 to %.1f μg/m³ over %.1f minutes", 
+              MAX_PM_TARGET, EXPONENTIAL_RISE_DURATION_SECONDS / 60.0);
+  MyLog::info("After reaching target, will maintain for %.1f minutes then shutdown", 
+              MAINTENANCE_DURATION_SECONDS / 60.0);
   xTaskCreatePinnedToCore(Fan_controller, "Fan_controller_task", 4096, NULL, 1,
                           &Fan_controller_Handle, 1);
 }

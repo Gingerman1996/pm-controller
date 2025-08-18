@@ -13,6 +13,10 @@ class Calculator {
   static uint16_t scaleDutyCycle(const uint16_t dutyCycle);
   static int calculateInletConcentration(int targetConcentration);
   static int convertPercentageToRPM(int percent);
+  
+  // Exponential setpoint control functions
+  static void initExponentialRise(float maxTarget, float riseTimeSeconds);
+  static float calculateExponentialTarget(unsigned long currentTime);
 
  private:
   constexpr static double ROOM_VALUE_M3 = 48;
@@ -24,6 +28,13 @@ class Calculator {
   static float current_error, previous_error, integral, derivative;
   static float Kp, Ki, Kd;
   static float dt, lastTime;  // Time tracking for PID
+  
+  // Exponential setpoint shaping variables
+  static float filtered_target;      // Filtered setpoint for smooth exponential rise
+  static float alpha;                // Filter coefficient for exponential rise (Ts/tau_r)
+  static unsigned long startTime;    // Start time for exponential rise calculation
+  static float maxTargetValue;       // Maximum target value for the exponential rise
+  static float riseTimeSeconds;      // Total time for exponential rise (in seconds)
   constexpr static double ductDiameter =
       0.1016;  // Diameter of duct in meters (4 inches)
   constexpr static double k =

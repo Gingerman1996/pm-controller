@@ -13,6 +13,13 @@ float Calculator::Kd = 0.05;  // Lower derivative gain to reduce noise in genera
 float Calculator::dt = 1.0;   // Time step in seconds
 float Calculator::lastTime = 0; // Last time PID was calculated
 
+// Exponential setpoint shaping variables
+float Calculator::filtered_target = 0;      // Filtered setpoint for smooth exponential rise
+float Calculator::alpha = 0.1;              // Filter coefficient (default value)
+unsigned long Calculator::startTime = 0;    // Start time for exponential rise calculation
+float Calculator::maxTargetValue = 50.0;    // Maximum target value for the exponential rise
+float Calculator::riseTimeSeconds = 7200.0; // Total time for exponential rise (2 hours = 7200 seconds)
+
 float Calculator::getFanRunningIntervalV2(float startValue,
                                           uint16_t targetValue,
                                           uint16_t fanSpeedInPercent) {
@@ -42,7 +49,7 @@ uint16_t Calculator::scaleDutyCycle(const uint16_t dutyCycle) {
   return ((float)dutyCycle / 100) * MAX_DUTY_CYCLE_SCALE;
 }
 
-// Function to calculate the PID output
+// Function to calculate the PID output with exponential setpoint shaping
 float Calculator::calculatePID(float current, uint16_t target) {
   // Get current time in milliseconds
   float currentTime = millis() / 1000.0; // Convert to seconds
@@ -59,9 +66,13 @@ float Calculator::calculatePID(float current, uint16_t target) {
   // Ensure minimum time step to prevent division by zero
   if (dt <= 0.01) dt = 0.01;
   
-  // Calculate the error (difference between target and current value)
+  // Apply first-order filter to setpoint for smooth exponential rise
+  // This creates a smooth transition to the target instead of step response
+  filtered_target += alpha * (target - filtered_target);
+  
+  // Calculate the error using filtered target instead of raw target
   // For PM2.5 generation: positive error means PM2.5 is below target (need more generation)
-  current_error = target - current;
+  current_error = filtered_target - current;
   
   // If current PM2.5 is at or above target, reduce generation speed but don't turn off completely
   if (current_error <= 0) {
@@ -219,4 +230,46 @@ int Calculator::calculateInletConcentration(int targetConcentration) {
 
   return inletConcentration; // Return the calculated inlet concentration in
                              // µg/m³
+}
+
+// Initialize exponential rise parameters
+void Calculator::initExponentialRise(float maxTarget, float riseTimeSeconds) {
+  maxTargetValue = maxTarget;
+  Calculator::riseTimeSeconds = riseTimeSeconds;
+  startTime = millis();
+  filtered_target = 0;
+  
+  // Calculate alpha based on desired rise time and sample period
+  // For exponential rise, we want to reach ~95% of target in riseTimeSeconds
+  // Using tau = riseTimeSeconds / 3 (to reach ~95% in 3*tau)
+  float tau = riseTimeSeconds / 3.0;
+  float samplePeriod = 1.0; // Assume 1 second sample period
+  alpha = samplePeriod / tau;
+  
+  // Limit alpha to reasonable range
+  if (alpha > 1.0) alpha = 1.0;
+  if (alpha < 0.01) alpha = 0.01;
+}
+
+// Calculate exponential target based on current time
+float Calculator::calculateExponentialTarget(unsigned long currentTime) {
+  if (startTime == 0) {
+    // If not initialized, return 0
+    return 0;
+  }
+  
+  float elapsedTime = (currentTime - startTime) / 1000.0; // Convert to seconds
+  
+  // If we've exceeded the rise time, return max target
+  if (elapsedTime >= riseTimeSeconds) {
+    return maxTargetValue;
+  }
+  
+  // Calculate the current target based on exponential rise
+  // For exponential rise: target(t) = maxTarget * (1 - e^(-t/tau))
+  // Where tau = riseTimeSeconds / 3 (to reach ~95% in total time)
+  float tau = riseTimeSeconds / 3.0;
+  float currentTarget = maxTargetValue * (1.0 - exp(-elapsedTime / tau));
+  
+  return currentTarget;
 }
